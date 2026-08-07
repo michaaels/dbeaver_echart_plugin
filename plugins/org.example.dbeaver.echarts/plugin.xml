@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?eclipse version="3.4"?>
+<plugin>
+   <extension point="org.jkiss.dbeaver.resultset.presentation">
+      <!-- Keep the optional chart presentation after DBeaver's built-in views. -->
+      <presentation
+            class="org.example.dbeaver.echarts.EChartsPresentation"
+            id="resultset.echarts"
+            label="ECharts"
+            type="custom"
+            supportsRecordMode="false"
+            supportsPanels="false"
+            supportsNavigation="false"
+            supportsEdit="false"
+            supportsHints="false"
+            order="1000">
+         <objectType name="org.jkiss.dbeaver.model.exec.DBCResultSet"/>
+      </presentation>
+   </extension>
+</plugin>

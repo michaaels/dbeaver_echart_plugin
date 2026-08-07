@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DBeaver ECharts</title>
+  <link rel="stylesheet" href="css/plugin.css">
+</head>
+<body>
+  <main class="app-shell">
+    <section class="toolbar" aria-label="Chart controls">
+      <label>
+        <span>Chart</span>
+        <select id="chartType">
+          <option value="line">Line</option>
+          <option value="area">Area</option>
+          <option value="bar">Bar</option>
+          <option value="scatter">Scatter</option>
+          <option value="pie">Pie</option>
+        </select>
+      </label>
+      <label>
+        <span>X / category</span>
+        <select id="xField"></select>
+      </label>
+      <label>
+        <span>Y / value</span>
+        <select id="yField"></select>
+      </label>
+      <label>
+        <span>Renderer</span>
+        <select id="renderer">
+          <option value="canvas">Canvas</option>
+          <option value="svg">SVG</option>
+        </select>
+      </label>
+      <button id="reload" type="button">Reload</button>
+      <span id="status" role="status"></span>
+    </section>
+
+    <section class="chart-wrap">
+      <div id="chart" aria-label="ECharts result-set visualization"></div>
+      <div id="empty" class="message" hidden></div>
+    </section>
+  </main>
+
+  <script src="js/echarts.min.js"></script>
+  <script src="js/chart.js"></script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feature
+      id="org.example.dbeaver.echarts.feature"
+      label="DBeaver ECharts Presentation"
+      version="0.1.0.qualifier"
+      provider-name="Example">
+
+   <description>
+      Interactive Apache ECharts visualization for DBeaver result sets.
+   </description>
+
+   <license url="https://www.apache.org/licenses/LICENSE-2.0">
+      Licensed under the Apache License, Version 2.0.
+   </license>
+
+   <requires>
+      <import plugin="org.jkiss.dbeaver.ui.editors.data"/>
+   </requires>
+
+   <plugin
+         id="org.example.dbeaver.echarts"
+         download-size="0"
+         install-size="0"
+         version="0.0.0"
+         unpack="true"/>
+</feature>

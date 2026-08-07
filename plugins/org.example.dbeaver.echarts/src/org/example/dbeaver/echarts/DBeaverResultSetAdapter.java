@@ -1,0 +1,137 @@
+package org.example.dbeaver.echarts;
+
+import org.jkiss.dbeaver.model.data.DBDAttributeBinding;
+import org.jkiss.dbeaver.ui.controls.resultset.IResultSetController;
+import org.jkiss.dbeaver.ui.controls.resultset.ResultSetModel;
+import org.jkiss.dbeaver.ui.controls.resultset.ResultSetRow;
+
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.time.temporal.TemporalAccessor;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * The only class that translates DBeaver's result-set model to our browser DTO.
+ * Keeping this dependency boundary small makes DBeaver upgrades easier to absorb.
+ */
+final class DBeaverResultSetAdapter {
+    static final int DEFAULT_MAX_ROWS = 50_000;
+    static final int DEFAULT_MAX_CELLS = 1_000_000;
+    private static final long JS_MAX_SAFE_INTEGER = 9_007_199_254_740_991L;
+    private static final BigInteger JS_MAX_SAFE_BIG_INTEGER = BigInteger.valueOf(JS_MAX_SAFE_INTEGER);
+    private static final BigInteger JS_MIN_SAFE_BIG_INTEGER = BigInteger.valueOf(-JS_MAX_SAFE_INTEGER);
+
+    private final IResultSetController controller;
+    private final int maxRows;
+    private final int maxCells;
+
+    DBeaverResultSetAdapter(IResultSetController controller) {
+        this(controller, DEFAULT_MAX_ROWS, DEFAULT_MAX_CELLS);
+    }
+
+    DBeaverResultSetAdapter(IResultSetController controller, int maxRows, int maxCells) {
+        this.controller = controller;
+        this.maxRows = Math.max(1, maxRows);
+        this.maxCells = Math.max(1, maxCells);
+    }
+
+    String snapshotAsJson() {
+        ResultSetModel model = controller.getModel();
+        List<DBDAttributeBinding> attributes = model.getVisibleLeafAttributes();
+        int rowCount = model.getRowCount();
+        int columnCount = Math.max(1, attributes.size());
+        int maxRowsByCellBudget = Math.max(1, maxCells / columnCount);
+        int effectiveMaxRows = Math.min(maxRows, maxRowsByCellBudget);
+        int exportedRowCount = Math.min(rowCount, effectiveMaxRows);
+
+        List<Map<String, Object>> columns = new ArrayList<>(attributes.size());
+        for (int i = 0; i < attributes.size(); i++) {
+            DBDAttributeBinding attribute = attributes.get(i);
+            Map<String, Object> column = new LinkedHashMap<>();
+            column.put("index", i);
+            column.put("name", attribute.getName());
+            column.put("kind", attribute.getDataKind().name());
+            columns.add(column);
+        }
+
+        List<List<Object>> rows = new ArrayList<>(exportedRowCount);
+        for (int rowIndex = 0; rowIndex < exportedRowCount; rowIndex++) {
+            ResultSetRow row = model.getRow(rowIndex);
+            List<Object> values = new ArrayList<>(attributes.size());
+            for (DBDAttributeBinding attribute : attributes) {
+                Object value = model.getCellValue(attribute, row);
+                values.add(normalize(value));
+            }
+            rows.add(values);
+        }
+
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("schemaVersion", 1);
+        snapshot.put("columns", columns);
+        snapshot.put("rows", rows);
+        snapshot.put("rowCount", rowCount);
+        snapshot.put("exportedRowCount", exportedRowCount);
+        snapshot.put("truncated", exportedRowCount < rowCount);
+        snapshot.put("maxRows", maxRows);
+        snapshot.put("maxCells", maxCells);
+        snapshot.put("effectiveMaxRows", effectiveMaxRows);
+        return JsonWriter.write(snapshot);
+    }
+
+    private static Object normalize(Object value) {
+        if (value == null || value instanceof Boolean || value instanceof String) {
+            return value;
+        }
+        if (value instanceof Character character) {
+            return character.toString();
+        }
+        if (value instanceof Byte || value instanceof Short || value instanceof Integer) {
+            return value;
+        }
+        if (value instanceof Long number) {
+            long n = number.longValue();
+            return n >= -JS_MAX_SAFE_INTEGER && n <= JS_MAX_SAFE_INTEGER ? number : number.toString();
+        }
+        if (value instanceof BigInteger number) {
+            return number.compareTo(JS_MIN_SAFE_BIG_INTEGER) >= 0 && number.compareTo(JS_MAX_SAFE_BIG_INTEGER) <= 0
+                ? number
+                : number.toString();
+        }
+        if (value instanceof BigDecimal number) {
+            // Preserve arbitrary precision. The UI converts to Number only when a chart requires it.
+            return number.toPlainString();
+        }
+        if (value instanceof Double number) {
+            return Double.isFinite(number) ? number : null;
+        }
+        if (value instanceof Float number) {
+            return Float.isFinite(number) ? number : null;
+        }
+        if (value instanceof Number) {
+            return value.toString();
+        }
+        if (value instanceof java.sql.Date date) {
+            return date.toLocalDate().toString();
+        }
+        if (value instanceof java.sql.Time time) {
+            return time.toLocalTime().toString();
+        }
+        if (value instanceof java.sql.Timestamp timestamp) {
+            return timestamp.toInstant().toString();
+        }
+        if (value instanceof Date date) {
+            return date.toInstant().toString();
+        }
+        if (value instanceof TemporalAccessor temporal) {
+            return temporal.toString();
+        }
+        if (value instanceof byte[] bytes) {
+            return "[binary " + bytes.length + " bytes]";
+        }
+        return String.valueOf(value);
+    }
+}
