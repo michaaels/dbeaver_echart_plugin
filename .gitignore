@@ -2,3 +2,7 @@
 **/target/
 *.log
 .DS_Store
+sites/*/artifacts.jar
+sites/*/content.jar
+sites/*/features/
+sites/*/plugins/

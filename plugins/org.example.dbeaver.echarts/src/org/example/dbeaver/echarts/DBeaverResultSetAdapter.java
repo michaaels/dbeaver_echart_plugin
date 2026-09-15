@@ -1,7 +1,14 @@
 package org.example.dbeaver.echarts;
 
+import org.eclipse.swt.dnd.HTMLTransfer;
+import org.eclipse.swt.dnd.TextTransfer;
+import org.eclipse.swt.dnd.Transfer;
 import org.jkiss.dbeaver.model.data.DBDAttributeBinding;
+import org.jkiss.dbeaver.model.sql.SQLQueryContainer;
+import org.jkiss.dbeaver.model.sql.SQLScriptElement;
+import org.jkiss.dbeaver.model.struct.DBSDataContainer;
 import org.jkiss.dbeaver.ui.controls.resultset.IResultSetController;
+import org.jkiss.dbeaver.ui.controls.resultset.ResultSetCopySettings;
 import org.jkiss.dbeaver.ui.controls.resultset.ResultSetModel;
 import org.jkiss.dbeaver.ui.controls.resultset.ResultSetRow;
 
@@ -30,7 +37,7 @@ final class DBeaverResultSetAdapter {
     private final int maxCells;
 
     DBeaverResultSetAdapter(IResultSetController controller) {
-        this(controller, DEFAULT_MAX_ROWS, DEFAULT_MAX_CELLS);
+        this(controller, EChartsPreferences.getMaxRows(), EChartsPreferences.getMaxCells());
     }
 
     DBeaverResultSetAdapter(IResultSetController controller, int maxRows, int maxCells) {
@@ -79,10 +86,179 @@ final class DBeaverResultSetAdapter {
         snapshot.put("maxRows", maxRows);
         snapshot.put("maxCells", maxCells);
         snapshot.put("effectiveMaxRows", effectiveMaxRows);
+        snapshot.put("defaultRenderer", EChartsPreferences.getDefaultRenderer());
+        snapshot.put("source", sourceDescriptor());
         return JsonWriter.write(snapshot);
     }
 
-    private static Object normalize(Object value) {
+    private Map<String, Object> sourceDescriptor() {
+        Map<String, Object> source = new LinkedHashMap<>();
+        source.put("schemaVersion", 1);
+        source.put("kind", "activeResultSet");
+
+        DBSDataContainer dataContainer = controller.getDataContainer();
+        if (dataContainer != null) {
+            source.put("name", dataContainer.getName());
+        }
+        if (controller.getContainer() instanceof SQLQueryContainer queryContainer) {
+            SQLScriptElement query = queryContainer.getQuery();
+            if (query != null) {
+                source.put("sql", query.getOriginalText());
+            }
+            if (queryContainer.getDataSourceContainer() != null) {
+                source.put("connection", queryContainer.getDataSourceContainer().getName());
+            }
+        }
+        return source;
+    }
+
+    Map<Transfer, Object> copySelection(ResultSetCopySettings settings) {
+        ResultSetModel model = controller.getModel();
+        List<DBDAttributeBinding> attributes = model.getVisibleLeafAttributes();
+        List<Integer> rowIndexes = selectedRowIndexes(model);
+        String text = renderDelimited(model, attributes, rowIndexes, settings);
+
+        Map<Transfer, Object> transfers = new LinkedHashMap<>();
+        transfers.put(TextTransfer.getInstance(), text);
+        if (settings.isCopyHTML()) {
+            transfers.put(HTMLTransfer.getInstance(), renderHtml(model, attributes, rowIndexes, settings));
+        }
+        return transfers;
+    }
+
+    private List<Integer> selectedRowIndexes(ResultSetModel model) {
+        int[] selectedRecords = controller.getSelectedRecords();
+        List<Integer> indexes = new ArrayList<>();
+        int columnCount = Math.max(1, model.getVisibleLeafAttributes().size());
+        int copyRowLimit = Math.max(1, Math.min(maxRows, maxCells / columnCount));
+        if (selectedRecords != null && selectedRecords.length > 0) {
+            for (int index : selectedRecords) {
+                if (index >= 0 && index < model.getRowCount() && indexes.size() < copyRowLimit) {
+                    indexes.add(index);
+                }
+            }
+            return indexes;
+        }
+
+        int rowCount = Math.min(model.getRowCount(), copyRowLimit);
+        for (int index = 0; index < rowCount; index++) {
+            indexes.add(index);
+        }
+        return indexes;
+    }
+
+    private String renderDelimited(
+        ResultSetModel model,
+        List<DBDAttributeBinding> attributes,
+        List<Integer> rowIndexes,
+        ResultSetCopySettings settings
+    ) {
+        String columnDelimiter = defaultValue(settings.getColumnDelimiter(), "\t");
+        String rowDelimiter = defaultValue(settings.getRowDelimiter(), "\n");
+        String quote = defaultValue(settings.getQuoteString(), "\"");
+        StringBuilder output = new StringBuilder();
+
+        if (settings.isCopyHeader()) {
+            List<String> headers = new ArrayList<>();
+            if (settings.isCopyRowNumbers()) {
+                headers.add("#");
+            }
+            headers.addAll(attributes.stream().map(DBDAttributeBinding::getName).toList());
+            appendDelimitedRow(output, headers,
+                columnDelimiter, rowDelimiter, quote, settings);
+        }
+        for (int i = 0; i < rowIndexes.size(); i++) {
+            int rowIndex = rowIndexes.get(i);
+            ResultSetRow row = model.getRow(rowIndex);
+            List<String> values = new ArrayList<>();
+            if (settings.isCopyRowNumbers()) {
+                values.add(String.valueOf(rowIndex + 1));
+            }
+            for (DBDAttributeBinding attribute : attributes) {
+                values.add(displayValue(model.getCellValue(attribute, row)));
+            }
+            appendDelimitedRow(output, values, columnDelimiter, rowDelimiter, quote, settings);
+        }
+        return output.toString();
+    }
+
+    private void appendDelimitedRow(
+        StringBuilder output,
+        List<String> values,
+        String columnDelimiter,
+        String rowDelimiter,
+        String quote,
+        ResultSetCopySettings settings
+    ) {
+        for (int i = 0; i < values.size(); i++) {
+            if (i > 0) {
+                output.append(columnDelimiter);
+            }
+            String value = values.get(i);
+            boolean quoteValue = settings.isForceQuotes()
+                || settings.isQuoteCells()
+                || value.contains(columnDelimiter)
+                || value.contains(rowDelimiter)
+                || value.contains(quote);
+            if (quoteValue) {
+                output.append(quote).append(value.replace(quote, quote + quote)).append(quote);
+            } else {
+                output.append(value);
+            }
+        }
+        output.append(rowDelimiter);
+    }
+
+    private String renderHtml(
+        ResultSetModel model,
+        List<DBDAttributeBinding> attributes,
+        List<Integer> rowIndexes,
+        ResultSetCopySettings settings
+    ) {
+        StringBuilder output = new StringBuilder("<table><thead><tr>");
+        if (settings.isCopyHeader()) {
+            if (settings.isCopyRowNumbers()) {
+                output.append("<th>#</th>");
+            }
+            for (DBDAttributeBinding attribute : attributes) {
+                output.append("<th>").append(escapeHtml(attribute.getName())).append("</th>");
+            }
+        }
+        output.append("</tr></thead><tbody>");
+        for (int rowIndex : rowIndexes) {
+            output.append("<tr>");
+            if (settings.isCopyRowNumbers()) {
+                output.append("<td>").append(rowIndex + 1).append("</td>");
+            }
+            ResultSetRow row = model.getRow(rowIndex);
+            for (DBDAttributeBinding attribute : attributes) {
+                output.append("<td>")
+                    .append(escapeHtml(displayValue(model.getCellValue(attribute, row))))
+                    .append("</td>");
+            }
+            output.append("</tr>");
+        }
+        return output.append("</tbody></table>").toString();
+    }
+
+    private static String displayValue(Object value) {
+        return value == null ? "" : String.valueOf(normalize(value));
+    }
+
+    private static String escapeHtml(String value) {
+        return value
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;")
+            .replace("'", "&#39;");
+    }
+
+    private static String defaultValue(String value, String fallback) {
+        return value == null || value.isEmpty() ? fallback : value;
+    }
+
+    static Object normalize(Object value) {
         if (value == null || value instanceof Boolean || value instanceof String) {
             return value;
         }

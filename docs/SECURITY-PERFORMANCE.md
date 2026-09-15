@@ -2,47 +2,35 @@
 
 ## Security
 
-- ECharts is packaged locally; no CDN.
-- No database result data is sent over HTTP.
-- The BrowserFunction returns JSON as a string.
-- Database values are never concatenated into JavaScript source.
-- JSON control characters, quotes, backslashes, U+2028 and U+2029 are escaped.
-- Binary values are represented by a metadata placeholder rather than embedded raw.
-- Large integer precision is preserved by sending unsafe integers as strings.
-- Arbitrary database-specific objects fall back to display text; they are not reflected/serialized recursively.
-- Browser top-level navigation is restricted to the plugin's local `web/` resource root while the Java bridge is registered.
-- The `BrowserFunction` is exposed only to the top-level frame; child frames are not granted access.
-- Keep the browser page local and avoid adding remote scripts, fonts, telemetry or map tiles without explicit user opt-in.
+- Browser assets are local; no result data is sent over HTTP.
+- Database values are serialized as JSON data, never interpolated as JavaScript.
+- Browser navigation is restricted to the local plugin resource root.
+- Binary values use metadata placeholders and unsafe integers are serialized as strings.
+- Dashboard imports are capped at 1 MiB and normalized to bounded collections.
+- Widget SQL permits one conservatively validated read-only statement and runs with the active connection's permissions.
+- No remote map tiles, scripts, fonts, telemetry or iframes are loaded.
 
-## Performance
+## Resource budgets
 
-V1 intentionally limits synchronous bridge work to:
+Preferences default to 50,000 rows and 1,000,000 cells per snapshot. The lower
+budget determines the effective row count. Widget query snapshots obey the same
+limits.
 
-- 50,000 rows maximum.
-- 1,000,000 cells maximum.
+ECharts defaults to Canvas, disables animation for result charts, uses LTTB
+sampling for long lines, progressive thresholds and large modes where supported.
+Native `dataZoom` provides navigation without producing a label for every point.
 
-The effective row limit is the lower of the two budgets.
-
-ECharts uses:
-
-- Canvas by default.
-- No animation for result-set charts.
-- `sampling: lttb` for long line/area series.
-- progressive rendering thresholds.
-- large mode for large bar/scatter series where supported.
-- DataZoom for navigation instead of rendering labels for every point.
-
-## V2 performance architecture
-
-Snapshot conversion should move off the SWT UI thread:
+## Thread model
 
 ```text
-ResultSet refresh
-    -> background DBeaver Job
-    -> immutable JSON/data snapshot
-    -> SWT asyncExec
-    -> Browser notification
-    -> ECharts setOption
+Result/query worker -> immutable JSON -> Display.asyncExec -> SWT Browser -> ECharts
 ```
 
-The BrowserFunction should eventually become a cheap snapshot getter rather than doing the entire conversion on demand.
+Never access `Browser`, controls, theme objects or dialogs from a snapshot or SQL
+job. The browser-side interval policy may request work, but Java owns query job
+lifecycle and cancellation.
+
+## GL policy
+
+ECharts GL is optional and not packaged in 0.5. The profiling rationale and
+reconsideration criteria are documented in `GL-DECISION.md`.

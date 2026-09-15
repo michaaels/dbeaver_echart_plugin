@@ -1,50 +1,115 @@
 (() => {
   'use strict';
 
+  const CHART_TYPES = new Set([
+    'line', 'area', 'bar', 'scatter', 'pie', 'gauge', 'radar', 'heatmap', 'boxplot', 'treemap', 'funnel', 'map'
+  ]);
+  const DEFAULT_THEME = {
+    background: '#ffffff',
+    foreground: '#333333',
+    muted: '#6b7280',
+    border: '#c8cdd4',
+    grid: '#d9dde3',
+    controlBackground: '#f5f6f8',
+    dark: false
+  };
+
   const state = {
     snapshot: null,
     chart: null,
     renderer: 'canvas',
+    chartType: 'line',
     xIndex: -1,
     yIndex: -1,
-    chartType: 'line'
+    yIndices: [],
+    yAxes: {},
+    preferredXName: null,
+    preferredYNames: [],
+    preferredYAxes: {},
+    marks: { markLine: false, markArea: false, visualMap: false },
+    viewMode: 'chart',
+    dashboard: null,
+    widgetSnapshots: new Map(),
+    widgetErrors: new Map(),
+    widgetRequests: new Set(),
+    widgetRefreshTimes: new Map(),
+    configurationLoaded: false,
+    theme: DEFAULT_THEME
   };
 
   const els = {};
   let resizeObserver = null;
   let lastChartWidth = 0;
   let lastChartHeight = 0;
+  let configurationSaveTimer = null;
+  let lastDashboardRefresh = 0;
 
   function $(id) { return document.getElementById(id); }
 
   function init() {
-    els.chart = $('chart');
-    els.empty = $('empty');
-    els.status = $('status');
-    els.chartType = $('chartType');
-    els.xField = $('xField');
-    els.yField = $('yField');
-    els.renderer = $('renderer');
-    els.reload = $('reload');
+    Object.assign(els, {
+      chart: $('chart'),
+      chartView: $('chartView'),
+      dashboardView: $('dashboardView'),
+      dashboardGrid: $('dashboardGrid'),
+      dashboardFilters: $('dashboardFilters'),
+      dashboardEmpty: $('dashboardEmpty'),
+      dashboardActions: $('dashboardActions'),
+      viewMode: $('viewMode'),
+      addWidget: $('addWidget'),
+      clearFilters: $('clearFilters'),
+      importDashboard: $('importDashboard'),
+      exportDashboard: $('exportDashboard'),
+      empty: $('empty'),
+      status: $('status'),
+      chartType: $('chartType'),
+      xField: $('xField'),
+      yField: $('yField'),
+      renderer: $('renderer'),
+      seriesCount: $('seriesCount'),
+      seriesOptions: $('seriesOptions'),
+      markLine: $('markLine'),
+      markArea: $('markArea'),
+      visualMap: $('visualMap')
+    });
 
-    els.chartType.addEventListener('change', () => {
+    state.dashboard = window.DBeaverEChartsDashboard.createDashboard();
+    els.viewMode.addEventListener('change', () => updateConfiguration(() => {
+      state.viewMode = els.viewMode.value;
+    }));
+    els.addWidget.addEventListener('click', addDashboardWidget);
+    els.clearFilters.addEventListener('click', () => {
+      state.dashboard.filters = {};
+      state.dashboard.variables = {};
+      dashboardChanged();
+    });
+    els.importDashboard.addEventListener('click', importDashboard);
+    els.exportDashboard.addEventListener('click', exportDashboard);
+
+    els.chartType.addEventListener('change', () => updateConfiguration(() => {
       state.chartType = els.chartType.value;
-      render();
-    });
-    els.xField.addEventListener('change', () => {
+    }));
+    els.xField.addEventListener('change', () => updateConfiguration(() => {
       state.xIndex = Number(els.xField.value);
-      render();
-    });
-    els.yField.addEventListener('change', () => {
-      state.yIndex = Number(els.yField.value);
-      render();
-    });
-    els.renderer.addEventListener('change', () => {
+      state.preferredXName = selectedColumnName(state.xIndex);
+    }));
+    els.yField.addEventListener('change', () => updateConfiguration(() => {
+      const index = Number(els.yField.value);
+      state.yIndex = index;
+      state.yIndices = [index, ...state.yIndices.filter(item => item !== index)];
+      syncPreferredSeries();
+      renderSeriesOptions();
+    }));
+    els.renderer.addEventListener('change', () => updateConfiguration(() => {
       state.renderer = els.renderer.value;
       recreateChart();
-      render();
-    });
-    els.reload.addEventListener('click', () => reload({ preserveSelection: true }));
+    }));
+    for (const name of ['markLine', 'markArea', 'visualMap']) {
+      els[name].addEventListener('change', () => updateConfiguration(() => {
+        state.marks[name] = els[name].checked;
+      }));
+    }
+
     if (typeof ResizeObserver === 'function') {
       resizeObserver = new ResizeObserver(entries => {
         const entry = entries[0];
@@ -55,260 +120,479 @@
       window.addEventListener('resize', resizeChart);
     }
 
-    reload({ preserveSelection: false });
+    setLoading();
+    window.setInterval(checkDashboardRefreshPolicies, 1000);
+    if (typeof window.dbeaverBrowserReady === 'function') window.dbeaverBrowserReady();
   }
 
-  function readSnapshot() {
-    if (typeof window.dbeaverGetDataset !== 'function') {
-      throw new Error('DBeaver browser bridge is not available.');
-    }
-    const raw = window.dbeaverGetDataset();
-    const snapshot = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    if (!snapshot || typeof snapshot !== 'object') {
-      throw new Error('DBeaver returned an invalid dataset.');
-    }
-    if (snapshot.error) {
-      throw new Error(snapshot.error);
-    }
-    if (snapshot.schemaVersion !== 1) {
-      throw new Error(`Unsupported dataset schema: ${snapshot.schemaVersion}`);
-    }
-    return snapshot;
+  function updateConfiguration(change) {
+    change();
+    normalizeSelectionForChart();
+    render();
+    schedulePersistConfiguration();
   }
 
   function reload({ preserveSelection = true } = {}) {
-    try {
-      if (typeof window.echarts === 'undefined') {
-        throw new Error(
-          'Apache ECharts runtime is missing.\n' +
-          'Run scripts/vendor-echarts.ps1 or scripts/vendor-echarts.sh before building the plugin.'
-        );
-      }
-      const previousX = preserveSelection ? selectedColumnName(state.xIndex) : null;
-      const previousY = preserveSelection ? selectedColumnName(state.yIndex) : null;
+    if (!preserveSelection) {
+      state.preferredXName = null;
+      state.preferredYNames = [];
+      state.preferredYAxes = {};
+    }
+    setLoading();
+  }
 
-      state.snapshot = readSnapshot();
-      configureFields(previousX, previousY);
+  function setSnapshot(snapshot) {
+    try {
+      validateSnapshot(snapshot);
+      if (!state.configurationLoaded && ['canvas', 'svg'].includes(snapshot.defaultRenderer)) {
+        state.renderer = snapshot.defaultRenderer;
+        els.renderer.value = state.renderer;
+      }
+      const previousX = selectedColumnName(state.xIndex);
+      const previousYNames = selectedYNames();
+      state.snapshot = snapshot;
+      configureFields(previousX, previousYNames);
+      normalizeSelectionForChart();
       render();
-      setMessage(null);
       updateStatus();
+      schedulePersistConfiguration();
     } catch (error) {
       console.error(error);
-      setMessage(error instanceof Error ? error.message : String(error));
+      setError(error instanceof Error ? error.message : String(error));
     }
+  }
+
+  function validateSnapshot(snapshot) {
+    if (!snapshot || typeof snapshot !== 'object') throw new Error('DBeaver returned an invalid dataset.');
+    if (snapshot.error) throw new Error(snapshot.error);
+    if (snapshot.schemaVersion !== 1) throw new Error(`Unsupported dataset schema: ${snapshot.schemaVersion}`);
+  }
+
+  function setLoading() {
+    if (els.status) els.status.textContent = 'Loading result set…';
+  }
+
+  function setError(message) {
+    disposeChart();
+    setMessage(message);
+    if (els.status) els.status.textContent = 'Unable to load result set';
+  }
+
+  function setConfiguration(configuration) {
+    if (!configuration || configuration.schemaVersion !== 1) return;
+    if (CHART_TYPES.has(configuration.chartType)) {
+      state.chartType = configuration.chartType;
+      els.chartType.value = state.chartType;
+    }
+    if (['canvas', 'svg'].includes(configuration.renderer)) {
+      const rendererChanged = state.renderer !== configuration.renderer;
+      state.renderer = configuration.renderer;
+      els.renderer.value = state.renderer;
+      if (rendererChanged) recreateChart();
+    }
+    state.configurationLoaded = true;
+    state.preferredXName = typeof configuration.xColumn === 'string' ? configuration.xColumn : null;
+    state.preferredYNames = Array.isArray(configuration.yColumns)
+      ? configuration.yColumns.filter(name => typeof name === 'string')
+      : typeof configuration.yColumn === 'string' ? [configuration.yColumn] : [];
+    state.preferredYAxes = configuration.yAxes && typeof configuration.yAxes === 'object'
+      ? configuration.yAxes
+      : {};
+    state.marks = {
+      markLine: Boolean(configuration.marks?.markLine),
+      markArea: Boolean(configuration.marks?.markArea),
+      visualMap: Boolean(configuration.marks?.visualMap)
+    };
+    state.viewMode = configuration.viewMode === 'dashboard' ? 'dashboard' : 'chart';
+    els.viewMode.value = state.viewMode;
+    if (configuration.dashboard) {
+      try {
+        state.dashboard = window.DBeaverEChartsDashboard.normalizeDashboard(configuration.dashboard);
+      } catch (error) {
+        console.error(error);
+        state.dashboard = window.DBeaverEChartsDashboard.createDashboard();
+      }
+    }
+    state.widgetSnapshots.clear();
+    state.widgetErrors.clear();
+    state.widgetRequests.clear();
+    syncMarkControls();
+    if (state.snapshot) {
+      configureFields(null, []);
+      normalizeSelectionForChart();
+      render();
+    }
+  }
+
+  function setConfigurationJson(serializedConfiguration) {
+    try {
+      setConfiguration(JSON.parse(serializedConfiguration));
+    } catch (error) {
+      console.error(error);
+      clearConfiguration();
+    }
+  }
+
+  function clearConfiguration() {
+    state.configurationLoaded = false;
+    state.chartType = 'line';
+    state.renderer = 'canvas';
+    state.preferredXName = null;
+    state.preferredYNames = [];
+    state.preferredYAxes = {};
+    state.marks = { markLine: false, markArea: false, visualMap: false };
+    state.viewMode = 'chart';
+    state.dashboard = window.DBeaverEChartsDashboard.createDashboard();
+    state.widgetSnapshots.clear();
+    state.widgetErrors.clear();
+    state.widgetRequests.clear();
+    if (els.chartType) els.chartType.value = state.chartType;
+    if (els.renderer) els.renderer.value = state.renderer;
+    if (els.viewMode) els.viewMode.value = state.viewMode;
+    syncMarkControls();
+    if (state.snapshot) {
+      configureFields(null, []);
+      normalizeSelectionForChart();
+      render();
+    }
+  }
+
+  function setTheme(theme) {
+    state.theme = { ...DEFAULT_THEME, ...(theme || {}) };
+    const root = document.documentElement;
+    root.style.setProperty('--bg', state.theme.background);
+    root.style.setProperty('--fg', state.theme.foreground);
+    root.style.setProperty('--muted', state.theme.muted);
+    root.style.setProperty('--border', state.theme.border);
+    root.style.setProperty('--control-bg', state.theme.controlBackground);
+    if (state.snapshot) render();
+  }
+
+  function configureFields(previousX, previousYNames) {
+    const columns = state.snapshot.columns || [];
+    fillSelect(els.xField, columns);
+    fillSelect(els.yField, columns);
+
+    state.xIndex = findColumn(columns, state.preferredXName || previousX);
+    if (state.xIndex < 0) state.xIndex = inferX(columns);
+
+    const requestedYNames = state.preferredYNames.length ? state.preferredYNames : previousYNames;
+    state.yIndices = requestedYNames
+      .map(name => findColumn(columns, name))
+      .filter((index, position, values) => index >= 0 && index !== state.xIndex && values.indexOf(index) === position);
+    if (!state.yIndices.length) {
+      const inferred = inferY(columns, state.xIndex);
+      if (inferred >= 0) state.yIndices = [inferred];
+    }
+    state.yIndex = state.yIndices[0] ?? -1;
+    state.yAxes = Object.fromEntries(state.yIndices.map(index => [
+      index,
+      state.preferredYAxes[columns[index]?.name] === 'right' ? 'right' : 'left'
+    ]));
+
+    if (state.xIndex >= 0) els.xField.value = String(state.xIndex);
+    if (state.yIndex >= 0) els.yField.value = String(state.yIndex);
+    state.preferredXName = selectedColumnName(state.xIndex);
+    syncPreferredSeries();
+    renderSeriesOptions();
+  }
+
+  function normalizeSelectionForChart() {
+    const columns = state.snapshot?.columns || [];
+    const numericIndices = columns
+      .map((column, index) => ({ column, index }))
+      .filter(item => item.index !== state.xIndex && item.column.kind === 'NUMERIC')
+      .map(item => item.index);
+    state.yIndices = state.yIndices.filter(index => numericIndices.includes(index));
+    if (!state.yIndices.length && numericIndices.length) state.yIndices = [numericIndices[0]];
+    state.yIndex = state.yIndices[0] ?? -1;
+    if (state.yIndex >= 0) els.yField.value = String(state.yIndex);
+    for (const index of state.yIndices) {
+      if (!['left', 'right'].includes(state.yAxes[index])) state.yAxes[index] = 'left';
+    }
+    syncPreferredSeries();
+    renderSeriesOptions();
+  }
+
+  function renderSeriesOptions() {
+    if (!els.seriesOptions) return;
+    els.seriesOptions.replaceChildren();
+    const columns = state.snapshot?.columns || [];
+    columns.forEach((column, index) => {
+      if (column.kind !== 'NUMERIC' || index === state.xIndex) return;
+      const row = document.createElement('div');
+      row.className = 'series-option';
+      const label = document.createElement('label');
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = state.yIndices.includes(index);
+      checkbox.addEventListener('change', () => updateConfiguration(() => {
+        state.yIndices = checkbox.checked
+          ? [...state.yIndices, index].filter((value, position, values) => values.indexOf(value) === position)
+          : state.yIndices.filter(value => value !== index);
+        state.yIndex = state.yIndices[0] ?? -1;
+        syncPreferredSeries();
+      }));
+      const name = document.createElement('span');
+      name.textContent = column.name;
+      name.title = column.name;
+      label.append(checkbox, name);
+
+      const axis = document.createElement('select');
+      axis.disabled = !checkbox.checked;
+      axis.append(new Option('Left', 'left'), new Option('Right', 'right'));
+      axis.value = state.yAxes[index] || 'left';
+      axis.addEventListener('change', () => updateConfiguration(() => {
+        state.yAxes[index] = axis.value;
+        syncPreferredSeries();
+      }));
+      row.append(label, axis);
+      els.seriesOptions.appendChild(row);
+    });
+    els.seriesCount.textContent = String(state.yIndices.length);
+  }
+
+  function syncPreferredSeries() {
+    state.preferredYNames = selectedYNames();
+    state.preferredYAxes = Object.fromEntries(state.yIndices.map(index => [
+      selectedColumnName(index),
+      state.yAxes[index] || 'left'
+    ]).filter(([name]) => Boolean(name)));
+  }
+
+  function syncMarkControls() {
+    for (const name of ['markLine', 'markArea', 'visualMap']) {
+      if (els[name]) els[name].checked = state.marks[name];
+    }
+  }
+
+  function fillSelect(select, columns) {
+    select.replaceChildren();
+    columns.forEach((column, index) => select.appendChild(new Option(`${column.name} (${column.kind})`, String(index))));
+  }
+
+  function findColumn(columns, name) {
+    if (!name) return -1;
+    return columns.findIndex(column => column.name === name);
+  }
+
+  function inferX(columns) {
+    let index = columns.findIndex(column => column.kind === 'DATETIME');
+    if (index >= 0) return index;
+    index = columns.findIndex(column => column.kind === 'STRING');
+    return index >= 0 ? index : (columns.length ? 0 : -1);
+  }
+
+  function inferY(columns, xIndex) {
+    return columns.findIndex((column, index) => index !== xIndex && column.kind === 'NUMERIC');
   }
 
   function selectedColumnName(index) {
     return state.snapshot?.columns?.[index]?.name ?? null;
   }
 
-  function configureFields(previousX, previousY) {
-    const columns = state.snapshot.columns || [];
-    fillSelect(els.xField, columns);
-    fillSelect(els.yField, columns);
-
-    state.xIndex = findPrevious(columns, previousX);
-    if (state.xIndex < 0) state.xIndex = inferX(columns);
-
-    state.yIndex = findPrevious(columns, previousY);
-    if (state.yIndex < 0 || state.yIndex === state.xIndex) state.yIndex = inferY(columns, state.xIndex);
-
-    if (state.xIndex >= 0) els.xField.value = String(state.xIndex);
-    if (state.yIndex >= 0) els.yField.value = String(state.yIndex);
-  }
-
-  function fillSelect(select, columns) {
-    select.replaceChildren();
-    columns.forEach((column, index) => {
-      const option = document.createElement('option');
-      option.value = String(index);
-      option.textContent = `${column.name} (${column.kind})`;
-      select.appendChild(option);
-    });
-  }
-
-  function findPrevious(columns, name) {
-    if (!name) return -1;
-    return columns.findIndex(column => column.name === name);
-  }
-
-  function inferX(columns) {
-    let index = columns.findIndex(column => isDateKind(column.kind));
-    if (index >= 0) return index;
-    index = columns.findIndex(column => isTextKind(column.kind));
-    return index >= 0 ? index : (columns.length ? 0 : -1);
-  }
-
-  function inferY(columns, xIndex) {
-    const index = columns.findIndex((column, i) => i !== xIndex && isNumericKind(column.kind));
-    if (index >= 0) return index;
-    return columns.findIndex((_, i) => i !== xIndex);
+  function selectedYNames() {
+    return state.yIndices.map(selectedColumnName).filter(Boolean);
   }
 
   function render() {
+    const dashboardMode = state.viewMode === 'dashboard';
+    els.chartView.hidden = dashboardMode;
+    els.dashboardView.hidden = !dashboardMode;
+    els.dashboardActions.hidden = !dashboardMode;
+    if (dashboardMode) {
+      renderDashboard();
+      return;
+    }
+    window.DBeaverEChartsDashboard.dispose();
+    renderChart();
+  }
+
+  function renderChart() {
     const snapshot = state.snapshot;
-    if (!snapshot || !snapshot.columns?.length || !snapshot.rows?.length) {
-      disposeChart();
-      setMessage('The result set has no rows or visible columns to chart.');
+    if (!snapshot?.columns?.length || !snapshot?.rows?.length) {
+      showEmpty('The result set has no rows or visible columns to chart.');
       return;
     }
-    if (state.xIndex < 0 || state.yIndex < 0) {
-      disposeChart();
-      setMessage('Select at least two result-set columns.');
+    if (state.xIndex < 0 || !state.yIndices.length) {
+      showEmpty('Select one category column and at least one numeric series.');
+      return;
+    }
+    if (typeof window.echarts === 'undefined' || !window.DBeaverEChartsAnalytics) {
+      showEmpty('The Apache ECharts analytical runtime is unavailable.');
       return;
     }
 
-    setMessage(null);
-    const chart = ensureChart();
-    chart.clear();
-    chart.setOption(buildOption(snapshot), { notMerge: true, lazyUpdate: false });
-  }
-
-  function resizeChart(width, height) {
-    if (!els.chart) return;
-
-    const bounds = els.chart.getBoundingClientRect();
-    const nextWidth = Math.round(Number.isFinite(width) ? width : bounds.width);
-    const nextHeight = Math.round(Number.isFinite(height) ? height : bounds.height);
-    if (nextWidth <= 0 || nextHeight <= 0) return;
-    if (nextWidth === lastChartWidth && nextHeight === lastChartHeight) return;
-
-    lastChartWidth = nextWidth;
-    lastChartHeight = nextHeight;
-    state.chart?.resize();
-  }
-
-  function buildOption(snapshot) {
-    const xColumn = snapshot.columns[state.xIndex];
-    const yColumn = snapshot.columns[state.yIndex];
-    const type = state.chartType;
-
-    if (type === 'pie') return buildPieOption(snapshot.rows, xColumn, yColumn);
-    if (type === 'scatter') return buildScatterOption(snapshot.rows, xColumn, yColumn);
-    return buildAxisOption(snapshot.rows, xColumn, yColumn, type);
-  }
-
-  function baseOption(xColumn, yColumn) {
-    return {
-      animation: false,
-      title: {
-        text: `${yColumn.name} by ${xColumn.name}`,
-        left: 12,
-        top: 8,
-        textStyle: { fontSize: 14, fontWeight: 600 }
-      },
-      tooltip: { trigger: 'axis', confine: true },
-      toolbox: {
-        right: 12,
-        feature: { dataZoom: {}, restore: {}, saveAsImage: {} }
-      },
-      grid: { left: 58, right: 28, top: 58, bottom: 58, containLabel: true }
-    };
-  }
-
-  function buildAxisOption(rows, xColumn, yColumn, type) {
-    const option = baseOption(xColumn, yColumn);
-    const useTimeAxis = type !== 'bar' && isDateKind(xColumn.kind);
-    const seriesType = type === 'area' ? 'line' : type;
-
-    option.xAxis = useTimeAxis
-      ? { type: 'time', name: xColumn.name, nameLocation: 'middle', nameGap: 32 }
-      : {
-          type: 'category',
-          name: xColumn.name,
-          nameLocation: 'middle',
-          nameGap: 34,
-          data: rows.map(row => displayValue(row[state.xIndex])),
-          axisLabel: { hideOverlap: true }
-        };
-    option.yAxis = {
-      type: 'value',
-      name: yColumn.name,
-      scale: true
-    };
-    option.dataZoom = [
-      { type: 'inside', filterMode: 'none' },
-      { type: 'slider', height: 18, bottom: 8, filterMode: 'none' }
-    ];
-    option.series = [{
-      name: yColumn.name,
-      type: seriesType,
-      showSymbol: rows.length <= 500,
-      sampling: rows.length > 2000 ? 'lttb' : undefined,
-      progressive: 5000,
-      progressiveThreshold: 10000,
-      large: seriesType === 'bar' && rows.length > 2000,
-      areaStyle: type === 'area' ? {} : undefined,
-      data: useTimeAxis
-        ? rows.map(row => [row[state.xIndex], toNumber(row[state.yIndex])]).filter(pair => pair[0] != null && Number.isFinite(pair[1]))
-        : rows.map(row => toNumber(row[state.yIndex]))
-    }];
-    return option;
-  }
-
-  function buildScatterOption(rows, xColumn, yColumn) {
-    const option = baseOption(xColumn, yColumn);
-    option.tooltip = { trigger: 'item', confine: true };
-    option.xAxis = { type: 'value', name: xColumn.name, scale: true };
-    option.yAxis = { type: 'value', name: yColumn.name, scale: true };
-    option.dataZoom = [{ type: 'inside' }, { type: 'slider', height: 18, bottom: 8 }];
-    option.series = [{
-      name: `${xColumn.name} / ${yColumn.name}`,
-      type: 'scatter',
-      large: rows.length > 5000,
-      largeThreshold: 5000,
-      progressive: 5000,
-      data: rows
-        .map(row => [toNumber(row[state.xIndex]), toNumber(row[state.yIndex])])
-        .filter(pair => Number.isFinite(pair[0]) && Number.isFinite(pair[1]))
-    }];
-    return option;
-  }
-
-  function buildPieOption(rows, xColumn, yColumn) {
-    const totals = new Map();
-    for (const row of rows) {
-      const name = displayValue(row[state.xIndex]);
-      const value = toNumber(row[state.yIndex]);
-      if (!Number.isFinite(value)) continue;
-      totals.set(name, (totals.get(name) || 0) + value);
+    try {
+      const option = window.DBeaverEChartsAnalytics.buildOption({
+        rows: snapshot.rows,
+        columns: snapshot.columns,
+        rowCount: snapshot.rows.length,
+        xIndex: state.xIndex,
+        yIndices: state.yIndices,
+        yAxes: state.yAxes,
+        chartType: state.chartType,
+        marks: state.marks,
+        theme: state.theme
+      });
+      if (!window.DBeaverEChartsAnalytics.hasRenderableData(option)) {
+        showEmpty('No compatible numeric values were found for the selected series.');
+        return;
+      }
+      setMessage(null);
+      const chart = ensureChart();
+      chart.clear();
+      chart.setOption(option, { notMerge: true, lazyUpdate: false });
+    } catch (error) {
+      console.error(error);
+      showEmpty(error instanceof Error ? error.message : String(error));
     }
-    const data = [...totals.entries()]
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value);
+  }
 
+  function renderDashboard() {
+    disposeChart();
+    window.DBeaverEChartsDashboard.render({
+      root: els.dashboardGrid,
+      filterRoot: els.dashboardFilters,
+      empty: els.dashboardEmpty,
+      dashboard: state.dashboard,
+      snapshot: state.snapshot,
+      widgetSnapshots: state.widgetSnapshots,
+      widgetErrors: state.widgetErrors,
+      widgetRequests: state.widgetRequests,
+      theme: state.theme,
+      renderer: state.renderer,
+      onChange: dashboardChanged,
+      onRefresh: widget => {
+        requestWidgetRefresh(widget);
+        renderDashboard();
+      }
+    });
+    requestMissingWidgetSnapshots();
+  }
+
+  function addDashboardWidget() {
+    if (!state.snapshot) return;
+    state.dashboard.widgets.push(window.DBeaverEChartsDashboard.createWidget(
+      currentChartConfiguration(),
+      state.snapshot
+    ));
+    state.viewMode = 'dashboard';
+    els.viewMode.value = state.viewMode;
+    dashboardChanged();
+  }
+
+  function dashboardChanged() {
+    render();
+    schedulePersistConfiguration();
+  }
+
+  function currentChartConfiguration() {
     return {
-      animation: false,
-      title: {
-        text: `${yColumn.name} by ${xColumn.name}`,
-        left: 12,
-        top: 8,
-        textStyle: { fontSize: 14, fontWeight: 600 }
-      },
-      tooltip: { trigger: 'item', confine: true },
-      legend: { type: 'scroll', bottom: 5 },
-      toolbox: { right: 12, feature: { restore: {}, saveAsImage: {} } },
-      series: [{
-        name: yColumn.name,
-        type: 'pie',
-        radius: ['25%', '68%'],
-        center: ['50%', '49%'],
-        minAngle: 1,
-        data
-      }]
+      chartType: state.chartType,
+      xColumn: selectedColumnName(state.xIndex) || state.preferredXName,
+      yColumn: selectedColumnName(state.yIndex),
+      yColumns: selectedYNames(),
+      yAxes: state.preferredYAxes,
+      marks: state.marks,
+      renderer: state.renderer
     };
+  }
+
+  function requestWidgetRefresh(widget) {
+    if (widget?.source?.kind === 'savedQuery' && widget.source.sql) {
+      state.widgetSnapshots.delete(widget.id);
+      state.widgetErrors.delete(widget.id);
+      state.widgetRequests.add(widget.id);
+      state.widgetRefreshTimes.set(widget.id, Date.now());
+      if (typeof window.dbeaverExecuteWidgetQuery === 'function') {
+        window.dbeaverExecuteWidgetQuery(widget.id, widget.source.sql);
+      } else {
+        state.widgetRequests.delete(widget.id);
+        state.widgetErrors.set(widget.id, 'The dashboard query bridge is unavailable.');
+      }
+      return;
+    }
+    if (typeof window.dbeaverRefreshResult === 'function') window.dbeaverRefreshResult();
+  }
+
+  function requestMissingWidgetSnapshots() {
+    for (const widget of state.dashboard.widgets) {
+      if (widget.source.kind !== 'savedQuery' || !widget.source.sql) continue;
+      if (state.widgetSnapshots.has(widget.id) || state.widgetErrors.has(widget.id) || state.widgetRequests.has(widget.id)) continue;
+      requestWidgetRefresh(widget);
+    }
+  }
+
+  function setWidgetSnapshot(widgetId, snapshot) {
+    try {
+      validateSnapshot(snapshot);
+      state.widgetRequests.delete(widgetId);
+      state.widgetErrors.delete(widgetId);
+      state.widgetSnapshots.set(widgetId, snapshot);
+      if (state.viewMode === 'dashboard') renderDashboard();
+    } catch (error) {
+      setWidgetError(widgetId, error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  function setWidgetError(widgetId, message) {
+    state.widgetRequests.delete(widgetId);
+    state.widgetSnapshots.delete(widgetId);
+    state.widgetErrors.set(widgetId, message);
+    if (state.viewMode === 'dashboard') renderDashboard();
+  }
+
+  function checkDashboardRefreshPolicies() {
+    if (state.viewMode !== 'dashboard' || !state.dashboard?.widgets?.length) return;
+    const now = Date.now();
+    for (const widget of state.dashboard.widgets) {
+      if (widget.refreshPolicy.mode !== 'interval' || widget.refreshPolicy.intervalSeconds < 5) continue;
+      if (state.widgetRequests.has(widget.id)) continue;
+      const previous = state.widgetRefreshTimes.get(widget.id) || lastDashboardRefresh;
+      if (now - previous >= widget.refreshPolicy.intervalSeconds * 1000) {
+        state.widgetRefreshTimes.set(widget.id, now);
+        lastDashboardRefresh = now;
+        requestWidgetRefresh(widget);
+      }
+    }
+  }
+
+  function importDashboard() {
+    if (typeof window.dbeaverImportDashboard !== 'function') return;
+    try {
+      const serialized = window.dbeaverImportDashboard();
+      if (!serialized) return;
+      state.dashboard = window.DBeaverEChartsDashboard.normalizeDashboard(JSON.parse(serialized));
+      state.widgetSnapshots.clear();
+      state.widgetErrors.clear();
+      state.widgetRequests.clear();
+      state.viewMode = 'dashboard';
+      els.viewMode.value = state.viewMode;
+      dashboardChanged();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  function exportDashboard() {
+    if (typeof window.dbeaverExportDashboard !== 'function') return;
+    window.dbeaverExportDashboard(JSON.stringify(state.dashboard, null, 2));
+  }
+
+  function showEmpty(message) {
+    disposeChart();
+    setMessage(message);
   }
 
   function ensureChart() {
-    if (!state.chart) {
-      state.chart = window.echarts.init(els.chart, null, { renderer: state.renderer });
-    }
+    if (!state.chart) state.chart = window.echarts.init(els.chart, null, { renderer: state.renderer });
     return state.chart;
   }
 
   function recreateChart() {
     disposeChart();
-    if (state.snapshot?.rows?.length) ensureChart();
+    if (state.viewMode === 'chart' && state.snapshot?.rows?.length) ensureChart();
   }
 
   function disposeChart() {
@@ -316,6 +600,36 @@
       state.chart.dispose();
       state.chart = null;
     }
+  }
+
+  function resizeChart(width, height) {
+    if (!els.chart) return;
+    const bounds = els.chart.getBoundingClientRect();
+    const nextWidth = Math.round(Number.isFinite(width) ? width : bounds.width);
+    const nextHeight = Math.round(Number.isFinite(height) ? height : bounds.height);
+    if (nextWidth <= 0 || nextHeight <= 0) return;
+    if (nextWidth === lastChartWidth && nextHeight === lastChartHeight) return;
+    lastChartWidth = nextWidth;
+    lastChartHeight = nextHeight;
+    state.chart?.resize();
+  }
+
+  function schedulePersistConfiguration() {
+    if (configurationSaveTimer !== null) window.clearTimeout(configurationSaveTimer);
+    configurationSaveTimer = window.setTimeout(() => {
+      configurationSaveTimer = null;
+      persistConfiguration();
+    }, 250);
+  }
+
+  function persistConfiguration() {
+    if (typeof window.dbeaverSaveConfiguration !== 'function') return;
+    window.dbeaverSaveConfiguration(JSON.stringify({
+      schemaVersion: 1,
+      ...currentChartConfiguration(),
+      viewMode: state.viewMode,
+      dashboard: state.dashboard
+    }));
   }
 
   function updateStatus() {
@@ -336,29 +650,17 @@
     els.empty.textContent = message;
   }
 
-  function isNumericKind(kind) {
-    return kind === 'NUMERIC';
-  }
-
-  function isDateKind(kind) {
-    return kind === 'DATETIME';
-  }
-
-  function isTextKind(kind) {
-    return kind === 'STRING';
-  }
-
-  function toNumber(value) {
-    if (value === null || value === undefined || value === '') return NaN;
-    const number = typeof value === 'number' ? value : Number(value);
-    return Number.isFinite(number) ? number : NaN;
-  }
-
-  function displayValue(value) {
-    if (value === null || value === undefined) return '(null)';
-    return String(value);
-  }
-
-  window.DBeaverECharts = Object.freeze({ reload });
+  window.DBeaverECharts = Object.freeze({
+    reload,
+    clearConfiguration,
+    setConfiguration,
+    setConfigurationJson,
+    setError,
+    setLoading,
+    setSnapshot,
+    setWidgetSnapshot,
+    setWidgetError,
+    setTheme
+  });
   window.addEventListener('DOMContentLoaded', init, { once: true });
 })();

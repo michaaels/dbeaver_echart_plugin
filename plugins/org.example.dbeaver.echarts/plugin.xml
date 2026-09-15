@@ -7,6 +7,7 @@
             class="org.example.dbeaver.echarts.EChartsPresentation"
             id="resultset.echarts"
             label="ECharts"
+            icon="web/assets/echarts-icon.png"
             type="custom"
             supportsRecordMode="false"
             supportsPanels="false"
@@ -16,5 +17,11 @@
             order="1000">
          <objectType name="org.jkiss.dbeaver.model.exec.DBCResultSet"/>
       </presentation>
+   </extension>
+   <extension point="org.eclipse.ui.preferencePages">
+      <page
+            id="org.example.dbeaver.echarts.preferences"
+            name="ECharts"
+            class="org.example.dbeaver.echarts.EChartsPreferencePage"/>
    </extension>
 </plugin>

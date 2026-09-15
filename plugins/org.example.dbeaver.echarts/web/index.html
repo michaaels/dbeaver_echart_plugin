@@ -10,6 +10,13 @@
   <main class="app-shell">
     <section class="toolbar" aria-label="Chart controls">
       <label>
+        <span>View</span>
+        <select id="viewMode">
+          <option value="chart">Chart</option>
+          <option value="dashboard">Dashboard</option>
+        </select>
+      </label>
+      <label>
         <span>Chart</span>
         <select id="chartType">
           <option value="line">Line</option>
@@ -17,6 +24,13 @@
           <option value="bar">Bar</option>
           <option value="scatter">Scatter</option>
           <option value="pie">Pie</option>
+          <option value="gauge">Gauge</option>
+          <option value="radar">Radar</option>
+          <option value="heatmap">Heatmap</option>
+          <option value="boxplot">Boxplot</option>
+          <option value="treemap">Treemap</option>
+          <option value="funnel">Funnel</option>
+          <option value="map">Map</option>
         </select>
       </label>
       <label>
@@ -27,6 +41,18 @@
         <span>Y / value</span>
         <select id="yField"></select>
       </label>
+      <details id="seriesPicker" class="toolbar-popover">
+        <summary><span>Series</span><strong id="seriesCount">1</strong></summary>
+        <div id="seriesOptions" class="popover-panel" aria-label="Y series and axes"></div>
+      </details>
+      <details class="toolbar-popover">
+        <summary><span>Analysis</span></summary>
+        <div class="popover-panel analysis-options">
+          <label><input id="markLine" type="checkbox"> Mean line</label>
+          <label><input id="markArea" type="checkbox"> Min/max area</label>
+          <label><input id="visualMap" type="checkbox"> Visual scale</label>
+        </div>
+      </details>
       <label>
         <span>Renderer</span>
         <select id="renderer">
@@ -34,17 +60,33 @@
           <option value="svg">SVG</option>
         </select>
       </label>
-      <button id="reload" type="button">Reload</button>
+      <div id="dashboardActions" class="dashboard-actions" hidden>
+        <button id="addWidget" type="button">Add widget</button>
+        <button id="clearFilters" type="button">Clear filters</button>
+        <button id="importDashboard" type="button">Import</button>
+        <button id="exportDashboard" type="button">Export</button>
+      </div>
       <span id="status" role="status"></span>
     </section>
 
-    <section class="chart-wrap">
-      <div id="chart" aria-label="ECharts result-set visualization"></div>
-      <div id="empty" class="message" hidden></div>
+    <section class="workspace">
+      <section id="chartView" class="chart-wrap">
+        <div id="chart" aria-label="ECharts result-set visualization"></div>
+        <div id="empty" class="message" hidden></div>
+      </section>
+      <section id="dashboardView" class="dashboard-workspace" hidden>
+        <div id="dashboardFilters" class="dashboard-filters" hidden></div>
+        <div id="dashboardGrid" class="dashboard-grid"></div>
+        <div id="dashboardEmpty" class="message" hidden></div>
+      </section>
     </section>
+
   </main>
 
   <script src="js/echarts.min.js"></script>
+  <script src="js/world-map.js"></script>
+  <script src="js/analytics.js"></script>
+  <script src="js/dashboard.js"></script>
   <script src="js/chart.js"></script>
 </body>
 </html>

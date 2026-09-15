@@ -1,35 +1,44 @@
-# Build and run strategy
+# Build and run
 
-## Phase 1 — PDE development target (recommended now)
+## Eclipse PDE development
 
-Use DBeaver Community **26.1.3** as the compatibility target and Java 21.
+Use Java 21 and a supported DBeaver Community installation as the target platform.
 
-1. Obtain the DBeaver 26.1.3 source or a matching Eclipse/PDE target.
-2. Import `plugins/org.example.dbeaver.echarts` as an existing Eclipse plug-in project.
-3. Import `features/org.example.dbeaver.echarts.feature` as a feature project.
-4. Run `scripts/vendor-echarts.ps1` on Windows or `scripts/vendor-echarts.sh` elsewhere.
-5. Resolve the target platform and confirm no unresolved bundle imports.
-6. Launch the DBeaver product from PDE.
-7. Execute a query returning at least one category/date and one numeric column.
-8. Select the `ECharts` result-set presentation.
+1. Import the plugin, feature and site directories as existing Eclipse projects.
+2. Configure the DBeaver installation as the PDE target platform.
+3. Refresh and clean all three projects.
+4. Confirm that the plugin has no unresolved bundle imports.
+5. Launch the DBeaver product from PDE.
+6. Execute a query with category/date and numeric columns, then select **ECharts**.
+7. Verify native zoom, restore, PNG download, dashboard mode and a read-only widget query.
 
-## Phase 2 — reproducible CI build
+Before launch, run:
 
-Do this only after Phase 1 compiles and launches:
+```powershell
+.\scripts\validate.ps1 -DBeaverPlugins C:\dbeaver\plugins
+```
 
-- Pin the DBeaver/P2 target repository or a generated target definition.
-- Add Tycho reactor build.
-- Build the bundle and feature.
-- Generate a P2 repository.
-- Add Windows/Linux/macOS smoke tests where practical.
-- Verify the ECharts Git blob during CI.
+The validation compiles every Java source against the selected target. To make
+Eclipse pick up newly added classes during local debugging, clean the plugin
+project rather than relying on stale contents in `bin/`.
 
-Do not make CI download an unpinned `latest` ECharts asset.
+## Third-party assets
 
-## Installation target
+The repository carries pinned runtime assets. To refresh them intentionally:
 
-Final releases should be a P2 repository so users can install from:
+```powershell
+.\scripts\vendor-echarts.ps1
+.\scripts\vendor-world-map.ps1
+```
 
-`Help -> Install New Software`
+The scripts verify the expected hashes before replacing existing files.
 
-The feature is already separated from the plugin to support that packaging path.
+## P2 repository
+
+Open `sites/org.example.dbeaver.echarts.site/category.xml` in PDE and choose
+**Build All**. The generated P2 directory can be served as static content and
+installed through DBeaver's **Help → Install New Software** dialog.
+
+For reproducible CI, pin the DBeaver target repository, run `scripts/validate`,
+build the plugin and feature, then publish the generated update site. Do not use
+an unpinned DBeaver or ECharts `latest` dependency.

@@ -1,68 +1,38 @@
-# DBeaver API boundary — 26.1.3
+# DBeaver API boundary — 26.2.0
 
-## Extension point
+The plugin registers `EChartsPresentation` at
+`org.jkiss.dbeaver.resultset.presentation` for `DBCResultSet` and advertises a
+read-only custom presentation.
 
-`org.jkiss.dbeaver.resultset.presentation`
+## ResultSet boundary
 
-V1 registers a `type="custom"` presentation for `org.jkiss.dbeaver.model.exec.DBCResultSet`.
+`DBeaverResultSetAdapter` is the only component that translates the active
+DBeaver result model into the browser snapshot schema. It consumes the public
+controller/model methods for visible attributes, rows, cell values, selections,
+data container and site.
 
-Important: in DBeaver 26.1.3 `ResultSetPresentationDescriptor` reads `type` and immediately converts it with `PresentationType.valueOf(...)`. Keep `type="custom"` explicit even if an older extension schema does not show all runtime attributes.
+## Independent dashboard query boundary
 
-## Exported package used
+`DashboardQueryJob` uses the active `DBCExecutionContext`, opens a
+`DBCExecutionPurpose.USER` session and returns the same bounded snapshot schema.
+It accepts one statement beginning with `SELECT`, `WITH`, `SHOW`, `EXPLAIN`,
+`DESCRIBE` or `DESC` and rejects mutating keywords. This is defense in depth;
+database permissions remain the authoritative access control.
 
-Bundle:
+## SWT boundary
 
-`org.jkiss.dbeaver.ui.editors.data`
+`EChartsPresentation` owns the SWT Browser and every browser/configuration/theme
+operation is marshalled through `runOnUiThread`. Snapshot and query jobs publish
+immutable JSON and never call SWT widgets directly. This rule prevents the
+`SWTException: Invalid thread access` failure from SQL worker jobs.
 
-Package:
+## Upgrade checklist
 
-`org.jkiss.dbeaver.ui.controls.resultset`
+For each DBeaver target upgrade:
 
-DBeaver 26.1.3 exports this package in its OSGi manifest.
-
-## ResultSet methods consumed
-
-Only these model operations are required by the adapter:
-
-```text
-IResultSetController.getModel()
-ResultSetModel.getVisibleLeafAttributes()
-ResultSetModel.getRowCount()
-ResultSetModel.getRow(int)
-ResultSetModel.getCellValue(DBDAttributeBinding, DBDValueRow)
-DBDAttributeBinding.getName()
-DBDAttributeBinding.getDataKind()
-```
-
-Avoid adding dependencies on spreadsheet/grid implementation classes unless necessary.
-
-## Presentation lifecycle methods implemented
-
-`EChartsPresentation` extends `AbstractPresentation` and implements the remaining read-only behavior:
-
-```text
-createPresentation
-getControl
-refreshData
-formatData
-clearMetaData
-updateValueView
-changeMode
-getCurrentAttribute
-copySelection
-dispose
-```
-
-`AbstractPresentation` remains responsible for the common selection/navigation/state defaults.
-
-## Upgrade rule
-
-For every DBeaver target upgrade:
-
-1. Diff `IResultSetPresentation.java`.
-2. Diff `AbstractPresentation.java`.
-3. Diff `ResultSetModel.java` methods listed above.
-4. Diff `ResultSetPresentationDescriptor.java`.
-5. Verify `org.jkiss.dbeaver.ui.controls.resultset` is still exported.
-6. Launch the plugin against the exact new DBeaver target.
-7. Only then widen the supported-version range.
+1. Run `scripts/validate` with the new installation's `plugins` directory.
+2. Diff `IResultSetPresentation`, `AbstractPresentation` and `ResultSetModel`.
+3. Verify the result-set package remains exported.
+4. Exercise active ResultSet refresh and independent widget SQL in PDE.
+5. Verify zoom, copy/export, theme switching and disposal.
+6. Update `COMPATIBILITY.md` only after compile and runtime checks pass.
