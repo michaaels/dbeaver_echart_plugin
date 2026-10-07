@@ -13,8 +13,10 @@
 
   function createDashboard() {
     return {
+      format: 'dbeaver-echarts-dashboard',
       schemaVersion: SCHEMA_VERSION,
       title: 'Result dashboard',
+      renderer: 'canvas',
       variables: {},
       filters: {},
       widgets: []
@@ -48,19 +50,41 @@
       kind: source?.kind === 'activeResultSet' ? 'activeResultSet' : 'savedQuery',
       name: typeof source?.name === 'string' ? source.name : 'Active result set',
       connection: typeof source?.connection === 'string' ? source.connection : null,
+      connectionId: typeof source?.connectionId === 'string' ? source.connectionId : null,
+      project: typeof source?.project === 'string' ? source.project : null,
       sql: typeof source?.sql === 'string' ? source.sql : ''
     };
   }
 
   function normalizeDashboard(value) {
-    if (!value || value.schemaVersion !== SCHEMA_VERSION || !Array.isArray(value.widgets)) {
+    if (!value || value.schemaVersion !== SCHEMA_VERSION || !Array.isArray(value.widgets)
+        || (value.format && value.format !== 'dbeaver-echarts-dashboard')) {
       throw new Error('Unsupported dashboard JSON schema.');
     }
     const dashboard = createDashboard();
     dashboard.title = typeof value.title === 'string' ? value.title.slice(0, 200) : dashboard.title;
+    dashboard.renderer = value.renderer === 'svg' ? 'svg' : 'canvas';
     dashboard.variables = normalizeDictionary(value.variables);
     dashboard.filters = normalizeDictionary(value.filters);
-    dashboard.widgets = value.widgets.slice(0, 24).map(normalizeWidget);
+    if (value.widgets.length > 24) throw new Error('A dashboard supports up to 24 widgets.');
+    dashboard.widgets = value.widgets.map(normalizeWidget);
+    if (new Set(dashboard.widgets.map(widget => widget.id)).size !== dashboard.widgets.length) {
+      throw new Error('Dashboard widget IDs must be unique.');
+    }
+    return dashboard;
+  }
+
+  // Files contain independent queries, never a reference to a transient result tab.
+  function portableDashboard(value, renderer) {
+    const dashboard = normalizeDashboard(value);
+    if (renderer) dashboard.renderer = renderer === 'svg' ? 'svg' : 'canvas';
+    for (const widget of dashboard.widgets) {
+      if (!widget.source.sql.trim()) {
+        throw new Error(`"${widget.title}" has no SQL. Open Source and assign its query before saving.`);
+      }
+      widget.source.kind = 'savedQuery';
+      if (widget.refreshPolicy.mode === 'onResult') widget.refreshPolicy.mode = 'manual';
+    }
     return dashboard;
   }
 
@@ -200,15 +224,30 @@
     const sql = document.createElement('textarea');
     sql.value = widget.source.sql;
     sql.placeholder = 'Read-only SQL; blank uses the active ResultSet';
+    const connection = document.createElement('select');
+    connection.setAttribute('aria-label', 'DBeaver connection');
+    connection.append(new Option(widget.source.connection || 'Choose connection', ''));
+    let connections = [];
+    if (typeof window.dbeaverListConnections === 'function') {
+      try { connections = JSON.parse(window.dbeaverListConnections()); } catch (error) { console.error(error); }
+    }
+    connections.forEach((item, index) => {
+      connection.append(new Option(`${item.project} / ${item.connection}`, String(index)));
+      if (item.connectionId === widget.source.connectionId && item.project === widget.source.project) {
+        connection.value = String(index);
+      }
+    });
     const apply = document.createElement('button');
     apply.type = 'button';
     apply.textContent = 'Use SQL';
     apply.addEventListener('click', () => {
-      widget.source.sql = sql.value.trim();
+      widget.source.sql = sql.value;
       widget.source.kind = widget.source.sql ? 'savedQuery' : 'activeResultSet';
+      if (connection.value !== '') Object.assign(widget.source, connections[Number(connection.value)]);
       onChange();
+      onRefresh(widget);
     });
-    editor.append(sql, apply);
+    editor.append(connection, sql, apply);
     source.append(summary, editor);
     footer.append(policy, refresh, source);
     return footer;
@@ -336,8 +375,10 @@
     SCHEMA_VERSION,
     createDashboard,
     createWidget,
+    buildContext,
     dispose,
     normalizeDashboard,
+    portableDashboard,
     render
   });
 })();

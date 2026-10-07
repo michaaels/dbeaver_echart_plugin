@@ -36,7 +36,7 @@ button, select, input { font: inherit; }
   padding: 3px 8px;
 }
 .toolbar button { cursor: pointer; }
-.dashboard-actions { display: flex; align-items: center; gap: 6px; }
+.dashboard-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .dashboard-actions[hidden] { display: none; }
 .toolbar-popover { position: relative; align-self: end; }
 .toolbar-popover summary {
@@ -222,3 +222,18 @@ button, select, input { font: inherit; }
   white-space: pre-wrap;
 }
 .message[hidden] { display: none; }
+/* A saved dashboard uses its own widget sources and stays in dashboard view. */
+.standalone-dashboard .toolbar > label:not(:last-of-type),
+.standalone-dashboard .toolbar > details {
+  display: none;
+}
+
+#dashboardTitle {
+  min-width: 160px;
+  max-width: 260px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--control-bg);
+  color: var(--fg);
+}

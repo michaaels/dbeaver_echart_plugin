@@ -28,6 +28,7 @@
     preferredYAxes: {},
     marks: { markLine: false, markArea: false, visualMap: false },
     viewMode: 'chart',
+    standalone: false,
     dashboard: null,
     widgetSnapshots: new Map(),
     widgetErrors: new Map(),
@@ -60,6 +61,10 @@
       clearFilters: $('clearFilters'),
       importDashboard: $('importDashboard'),
       exportDashboard: $('exportDashboard'),
+      saveDashboard: $('saveDashboard'),
+      openDashboard: $('openDashboard'),
+      refreshDashboard: $('refreshDashboard'),
+      dashboardTitle: $('dashboardTitle'),
       empty: $('empty'),
       status: $('status'),
       chartType: $('chartType'),
@@ -85,6 +90,13 @@
     });
     els.importDashboard.addEventListener('click', importDashboard);
     els.exportDashboard.addEventListener('click', exportDashboard);
+    els.saveDashboard.addEventListener('click', saveDashboard);
+    els.openDashboard.addEventListener('click', () => window.dbeaverOpenDashboard?.());
+    els.refreshDashboard.addEventListener('click', refreshDashboard);
+    els.dashboardTitle.addEventListener('input', () => {
+      state.dashboard.title = els.dashboardTitle.value;
+      schedulePersistConfiguration();
+    });
 
     els.chartType.addEventListener('change', () => updateConfiguration(() => {
       state.chartType = els.chartType.value;
@@ -450,6 +462,7 @@
   }
 
   function renderDashboard() {
+    els.dashboardTitle.value = state.dashboard.title;
     disposeChart();
     window.DBeaverEChartsDashboard.render({
       root: els.dashboardGrid,
@@ -473,10 +486,20 @@
 
   function addDashboardWidget() {
     if (!state.snapshot) return;
-    state.dashboard.widgets.push(window.DBeaverEChartsDashboard.createWidget(
+    if (state.dashboard.widgets.length >= 24) {
+      els.status.textContent = 'A dashboard supports up to 24 widgets.';
+      return;
+    }
+    const widget = window.DBeaverEChartsDashboard.createWidget(
       currentChartConfiguration(),
       state.snapshot
-    ));
+    );
+    if (widget.source.sql.trim()) {
+      widget.source.kind = 'savedQuery';
+      widget.refreshPolicy.mode = 'manual';
+      state.widgetSnapshots.set(widget.id, state.snapshot);
+    }
+    state.dashboard.widgets.push(widget);
     state.viewMode = 'dashboard';
     els.viewMode.value = state.viewMode;
     dashboardChanged();
@@ -506,7 +529,7 @@
       state.widgetRequests.add(widget.id);
       state.widgetRefreshTimes.set(widget.id, Date.now());
       if (typeof window.dbeaverExecuteWidgetQuery === 'function') {
-        window.dbeaverExecuteWidgetQuery(widget.id, widget.source.sql);
+        window.dbeaverExecuteWidgetQuery(widget.id, widget.source.sql, JSON.stringify(widget.source));
       } else {
         state.widgetRequests.delete(widget.id);
         state.widgetErrors.set(widget.id, 'The dashboard query bridge is unavailable.');
@@ -563,21 +586,55 @@
     try {
       const serialized = window.dbeaverImportDashboard();
       if (!serialized) return;
-      state.dashboard = window.DBeaverEChartsDashboard.normalizeDashboard(JSON.parse(serialized));
-      state.widgetSnapshots.clear();
-      state.widgetErrors.clear();
-      state.widgetRequests.clear();
-      state.viewMode = 'dashboard';
-      els.viewMode.value = state.viewMode;
+      loadDashboard(JSON.parse(serialized), state.standalone);
       dashboardChanged();
     } catch (error) {
-      setError(error instanceof Error ? error.message : String(error));
+      els.status.textContent = error instanceof Error ? error.message : String(error);
     }
   }
 
   function exportDashboard() {
-    if (typeof window.dbeaverExportDashboard !== 'function') return;
-    window.dbeaverExportDashboard(JSON.stringify(state.dashboard, null, 2));
+    writeDashboard('dbeaverExportDashboard');
+  }
+
+  function dashboardDocument() {
+    return window.DBeaverEChartsDashboard.portableDashboard(state.dashboard, state.renderer);
+  }
+
+  function writeDashboard(bridge) {
+    try {
+      if (typeof window[bridge] !== 'function') throw new Error('Dashboard file storage is available in DBeaver.');
+      const result = window[bridge](JSON.stringify(dashboardDocument(), null, 2));
+      if (result) els.status.textContent = typeof result === 'string' ? `Saved: ${result}` : 'Dashboard saved';
+    } catch (error) { els.status.textContent = error.message; }
+  }
+
+  function saveDashboard() { writeDashboard('dbeaverSaveDashboard'); }
+
+  function refreshDashboard() {
+    for (const widget of state.dashboard.widgets) requestWidgetRefresh(widget);
+    renderDashboard();
+  }
+
+  function loadDashboard(document, standalone = false) {
+    const dashboard = window.DBeaverEChartsDashboard.normalizeDashboard(document);
+    state.standalone = standalone;
+    documentBodyMode(standalone);
+    state.dashboard = dashboard;
+    state.renderer = dashboard.renderer;
+    els.renderer.value = state.renderer;
+    state.viewMode = 'dashboard';
+    els.viewMode.value = 'dashboard';
+    state.configurationLoaded = true;
+    state.widgetSnapshots.clear();
+    state.widgetErrors.clear();
+    state.widgetRequests.clear();
+    render();
+  }
+
+  function documentBodyMode(standalone) {
+    document.body.classList.toggle('standalone-dashboard', standalone);
+    els.addWidget.disabled = standalone;
   }
 
   function showEmpty(message) {
@@ -615,6 +672,7 @@
   }
 
   function schedulePersistConfiguration() {
+    if (state.standalone) window.dbeaverDashboardChanged?.();
     if (configurationSaveTimer !== null) window.clearTimeout(configurationSaveTimer);
     configurationSaveTimer = window.setTimeout(() => {
       configurationSaveTimer = null;
@@ -624,6 +682,7 @@
 
   function persistConfiguration() {
     if (typeof window.dbeaverSaveConfiguration !== 'function') return;
+    state.dashboard.renderer = state.renderer;
     window.dbeaverSaveConfiguration(JSON.stringify({
       schemaVersion: 1,
       ...currentChartConfiguration(),
@@ -660,7 +719,9 @@
     setSnapshot,
     setWidgetSnapshot,
     setWidgetError,
-    setTheme
+    setTheme,
+    loadDashboard,
+    dashboardDocument
   });
   window.addEventListener('DOMContentLoaded', init, { once: true });
 })();

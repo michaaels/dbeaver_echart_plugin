@@ -1,6 +1,27 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <?eclipse version="3.4"?>
 <plugin>
+   <extension point="org.eclipse.core.contenttype.contentTypes">
+      <content-type id="org.example.dbeaver.echarts.dashboard" name="ECharts dashboard"
+            base-type="org.eclipse.core.runtime.text" file-extensions="json" priority="high" default-charset="UTF-8"
+            describer="org.example.dbeaver.echarts.DashboardContentDescriber"/>
+   </extension>
+   <extension point="org.eclipse.ui.editors">
+      <editor id="org.example.dbeaver.echarts.dashboardEditor" name="ECharts dashboard"
+            class="org.example.dbeaver.echarts.DashboardEditor" icon="web/assets/echarts-icon.png" default="true">
+         <contentTypeBinding contentTypeId="org.example.dbeaver.echarts.dashboard"/>
+      </editor>
+   </extension>
+   <extension point="org.jkiss.dbeaver.resourceType">
+      <type id="echarts-dashboard" name="ECharts dashboard" icon="web/assets/echarts-icon.png"
+            folderIcon="web/assets/echarts-icon.png" managable="true">
+         <root folder="Dashboards/ECharts"/>
+         <contentTypeBinding contentTypeId="org.example.dbeaver.echarts.dashboard"/>
+      </type>
+   </extension>
+   <extension point="org.jkiss.dbeaver.resourceHandler">
+      <handler type="echarts-dashboard" class="org.example.dbeaver.echarts.DashboardResourceHandler"/>
+   </extension>
    <extension point="org.jkiss.dbeaver.resultset.presentation">
       <!-- Keep the optional chart presentation after DBeaver's built-in views. -->
       <presentation

@@ -107,6 +107,8 @@ final class DBeaverResultSetAdapter {
             }
             if (queryContainer.getDataSourceContainer() != null) {
                 source.put("connection", queryContainer.getDataSourceContainer().getName());
+                source.put("connectionId", queryContainer.getDataSourceContainer().getId());
+                source.put("project", queryContainer.getDataSourceContainer().getProject().getName());
             }
         }
         return source;

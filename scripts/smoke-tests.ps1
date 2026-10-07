@@ -102,6 +102,10 @@ if ($DBeaverPlugins) {
             & javac -encoding UTF-8 -source 21 -target 21 -cp (Join-Path $DBeaverPlugins '*') -d $CompileDir $Sources
             if ($LASTEXITCODE -ne 0) { throw 'Java sources do not compile against the supplied DBeaver target' }
             Write-Host 'Java source compatibility OK: supplied DBeaver target'
+            & javac -encoding UTF-8 -source 21 -target 21 -cp ($CompileDir + ';' + (Join-Path $DBeaverPlugins '*')) -d $CompileDir 'scripts\tests\DashboardFilesTest.java'
+            if ($LASTEXITCODE -ne 0) { throw 'Dashboard file tests failed to compile' }
+            & java -cp ($CompileDir + ';' + (Join-Path $DBeaverPlugins '*')) org.example.dbeaver.echarts.DashboardFilesTest
+            if ($LASTEXITCODE -ne 0) { throw 'Dashboard file tests failed' }
         } finally {
             Remove-Item -LiteralPath $CompileDir -Recurse -Force -ErrorAction SilentlyContinue
         }
