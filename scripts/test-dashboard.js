@@ -6,10 +6,9 @@ const vm = require('node:vm');
 
 const context = { window: {} };
 vm.createContext(context);
-vm.runInContext(
-  fs.readFileSync('plugins/org.example.dbeaver.echarts/web/js/dashboard.js', 'utf8'),
-  context
-);
+for (const file of ['dashboard-layout.js', 'dashboard.js']) {
+  vm.runInContext(fs.readFileSync('plugins/org.example.dbeaver.echarts/web/js/' + file, 'utf8'), context);
+}
 
 const dashboards = context.window.DBeaverEChartsDashboard;
 const dashboard = dashboards.createDashboard();

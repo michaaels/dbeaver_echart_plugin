@@ -105,3 +105,6 @@ Never replace them with an unpinned `latest` download.
 **Save dashboard** conserva SQL y configuración en `Dashboards/ECharts`, como
 JSON versionado y copia `.sql`. **Open dashboard** abre un editor independiente
 del resultado SQL. Consulta [la guía de dashboards](docs/DASHBOARDS.md).
+
+Arrastra un widget desde su cabecera y redimensiónalo desde la esquina inferior
+derecha. Sus posiciones y tamaños se conservan en el JSON del dashboard.

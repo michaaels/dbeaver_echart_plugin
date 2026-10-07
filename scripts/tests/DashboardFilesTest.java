@@ -25,6 +25,12 @@ public final class DashboardFilesTest {
             JsonObject chart = new JsonObject();
             chart.addProperty("chartType", "map");
             widget.add("chart", chart);
+            var layout = new JsonObject();
+            layout.addProperty("x", 4);
+            layout.addProperty("y", 9);
+            layout.addProperty("width", 6);
+            layout.addProperty("height", 12);
+            widget.add("layout", layout);
             JsonObject document = new JsonObject();
             document.addProperty("schemaVersion", 1);
             document.addProperty("title", "Control de ventas");
@@ -39,6 +45,7 @@ public final class DashboardFilesTest {
             check(DashboardFiles.string(restored.getAsJsonObject("source"), "sql").equals(query), "Exact Unicode SQL");
             check(DashboardFiles.string(restored.getAsJsonObject("source"), "kind").equals("savedQuery"), "Independent source");
             check(DashboardFiles.string(restored.getAsJsonObject("chart"), "chartType").equals("map"), "Map configuration");
+            check(restored.getAsJsonObject("layout").equals(layout), "Position and size survive file round trip");
             Path sql = DashboardFiles.sqlPath(file);
             check(sql.getFileName().toString().equals("control.echarts-dashboard.sql"), "Distinct SQL companion");
             String companion = Files.readString(sql);

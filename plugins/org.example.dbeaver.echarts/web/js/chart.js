@@ -277,7 +277,7 @@
     root.style.setProperty('--muted', state.theme.muted);
     root.style.setProperty('--border', state.theme.border);
     root.style.setProperty('--control-bg', state.theme.controlBackground);
-    if (state.snapshot) render();
+    if (state.snapshot || state.viewMode === 'dashboard') render();
   }
 
   function configureFields(previousX, previousYNames) {

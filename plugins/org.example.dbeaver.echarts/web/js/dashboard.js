@@ -4,6 +4,9 @@
   const SCHEMA_VERSION = 1;
   const chartInstances = new Map();
   const resizeObservers = new Map();
+  const layoutEngine = window.DBeaverDashboardLayout;
+  let activeGesture = null;
+  let pendingRender = null;
   let sequence = 0;
 
   function nextId() {
@@ -40,7 +43,7 @@
       },
       refreshPolicy: { mode: 'onResult', intervalSeconds: 0 },
       drillDown: { enabled: true },
-      layout: { columnSpan: 1, rowSpan: 1 }
+      layout: layoutEngine.normalizeLayout(null)
     };
   }
 
@@ -71,6 +74,7 @@
     if (new Set(dashboard.widgets.map(widget => widget.id)).size !== dashboard.widgets.length) {
       throw new Error('Dashboard widget IDs must be unique.');
     }
+    layoutEngine.placeWidgets(dashboard.widgets);
     return dashboard;
   }
 
@@ -112,17 +116,16 @@
         intervalSeconds: Math.max(0, Math.min(86400, Number(refreshPolicy.intervalSeconds) || 0))
       },
       drillDown: { enabled: value?.drillDown?.enabled !== false },
-      layout: {
-        columnSpan: Math.max(1, Math.min(2, Number(value?.layout?.columnSpan) || 1)),
-        rowSpan: Math.max(1, Math.min(2, Number(value?.layout?.rowSpan) || 1))
-      }
+      layout: layoutEngine.normalizeLayout(value?.layout)
     };
   }
 
-  function render({
+  function render(options) {
+    if (activeGesture) { pendingRender = options; return; }
+    const {
     root, filterRoot, empty, dashboard, snapshot, widgetSnapshots, widgetErrors, widgetRequests,
     theme, renderer, onChange, onRefresh
-  }) {
+    } = options;
     dispose();
     root.replaceChildren();
     renderFilters(filterRoot, dashboard, onChange);
@@ -132,19 +135,20 @@
       return;
     }
     empty.hidden = true;
+    layoutEngine.placeWidgets(dashboard.widgets);
 
     for (const widget of dashboard.widgets) {
       const element = document.createElement('article');
       element.className = 'dashboard-widget';
       element.dataset.widgetId = widget.id;
-      element.style.gridColumn = `span ${widget.layout.columnSpan}`;
-      element.style.gridRow = `span ${widget.layout.rowSpan}`;
+      applyLayout(element, widget.layout);
 
       const header = buildHeader(widget, dashboard, onChange);
       const chartElement = document.createElement('div');
       chartElement.className = 'widget-chart';
       const footer = buildFooter(widget, onChange, onRefresh);
       element.append(header, chartElement, footer);
+      addLayoutControls(root, element, header, widget, dashboard, onChange);
       root.appendChild(element);
       renderWidgetChart(
         chartElement,
@@ -161,9 +165,154 @@
     }
   }
 
+  function applyLayout(element, layout) {
+    element.style.gridColumn = `${layout.x + 1} / span ${layout.width}`;
+    element.style.gridRow = `${layout.y + 1} / span ${layout.height}`;
+  }
+
+  function addLayoutControls(root, element, header, widget, dashboard, onChange) {
+    const move = header.querySelector('.widget-drag-handle');
+    const resize = document.createElement('button');
+    resize.type = 'button';
+    resize.className = 'widget-resize-handle';
+    resize.textContent = '◢';
+    resize.title = 'Drag corner to resize; arrow keys resize the widget';
+    resize.setAttribute('aria-label', `Resize ${widget.title}`);
+    element.appendChild(resize);
+    header.addEventListener('pointerdown', event => {
+      if (event.target.closest('.widget-title, button:not(.widget-drag-handle)')) return;
+      startLayoutGesture(event, 'move', root, element, header, widget, dashboard, onChange);
+    });
+    resize.addEventListener('pointerdown', event => {
+      startLayoutGesture(event, 'resize', root, element, resize, widget, dashboard, onChange);
+    });
+    for (const [handle, mode] of [[move, 'move'], [resize, 'resize']]) {
+      handle.addEventListener('keydown', event => {
+        const delta = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key];
+        if (!delta || activeGesture) return;
+        event.preventDefault();
+        const layout = proposedLayout(widget.layout, mode, delta[0], delta[1]);
+        layoutEngine.changeLayout(dashboard.widgets, widget.id, layout);
+        onChange();
+        const updated = [...root.children].find(child => child.dataset.widgetId === widget.id);
+        updated?.querySelector(`.widget-${mode === 'move' ? 'drag' : 'resize'}-handle`)?.focus();
+      });
+    }
+  }
+
+  function proposedLayout(initial, mode, dx, dy) {
+    return layoutEngine.normalizeLayout(mode === 'move'
+      ? { ...initial, x: initial.x + dx, y: initial.y + dy }
+      : { ...initial, width: Math.min(layoutEngine.COLUMNS - initial.x, initial.width + dx), height: initial.height + dy });
+  }
+
+  function startLayoutGesture(event, mode, root, element, handle, widget, dashboard, onChange) {
+    if (activeGesture || (event.button ?? 0) !== 0 || event.isPrimary === false) return;
+    event.preventDefault();
+    const initial = { ...widget.layout };
+    const origin = root.getBoundingClientRect();
+    const styles = window.getComputedStyle?.(root);
+    const gap = parseFloat(styles?.columnGap) || layoutEngine.GAP;
+    const padding = (parseFloat(styles?.paddingLeft) || layoutEngine.GAP)
+      + (parseFloat(styles?.paddingRight) || layoutEngine.GAP);
+    const pitchX = ((root.clientWidth || origin.width) - padding + gap) / layoutEngine.COLUMNS;
+    const pitchY = layoutEngine.ROW_HEIGHT + (parseFloat(styles?.rowGap) || layoutEngine.GAP);
+    if (!(pitchX > 0)) return;
+    const startX = event.clientX, startY = event.clientY, pointerId = event.pointerId ?? 0;
+    const preview = document.createElement('div');
+    preview.className = 'widget-layout-preview';
+    preview.setAttribute('aria-hidden', 'true');
+    applyLayout(preview, initial);
+    root.appendChild(preview);
+    element.classList.add('widget-layout-active');
+    root.classList.add('dashboard-layout-active');
+    let candidate = initial, lastPointer = event, dragging = false;
+    const scroll = root.closest('.dashboard-workspace');
+    const matches = pointer => (pointer.pointerId ?? 0) === pointerId;
+
+    function update(pointer) {
+      lastPointer = pointer;
+      const current = root.getBoundingClientRect();
+      const dx = Math.round((pointer.clientX - startX - current.left + origin.left) / pitchX);
+      const dy = Math.round((pointer.clientY - startY - current.top + origin.top) / pitchY);
+      const previous = candidate;
+      candidate = proposedLayout(initial, mode, dx, dy);
+      applyLayout(preview, candidate);
+      if (mode === 'resize') {
+        applyLayout(element, candidate);
+        if (candidate.width !== previous.width || candidate.height !== previous.height) {
+          chartInstances.get(widget.id)?.resize();
+        }
+      } else {
+        element.style.transform = `translate(${(candidate.x - initial.x) * pitchX}px, ${(candidate.y - initial.y) * pitchY}px)`;
+      }
+    }
+
+    function finish(commit) {
+      if (!activeGesture) return;
+      const deferred = pendingRender;
+      activeGesture = null;
+      pendingRender = null;
+      window.clearInterval(scrollTimer);
+      document.removeEventListener('pointermove', pointerMove, true);
+      document.removeEventListener('pointerup', pointerUp, true);
+      document.removeEventListener('pointercancel', pointerCancel, true);
+      document.removeEventListener('keydown', keyDown, true);
+      window.removeEventListener('blur', windowBlur);
+      handle.removeEventListener('lostpointercapture', pointerCancel);
+      try { if (handle.hasPointerCapture?.(pointerId)) handle.releasePointerCapture(pointerId); } catch (error) { /* Disposed native handle. */ }
+      preview.remove();
+      element.style.transform = '';
+      applyLayout(element, initial);
+      element.classList.remove('widget-layout-active');
+      root.classList.remove('dashboard-layout-active');
+      chartInstances.get(widget.id)?.resize();
+      const changed = ['x', 'y', 'width', 'height'].some(key => candidate[key] !== initial[key]);
+      if (commit && changed) {
+        layoutEngine.changeLayout(dashboard.widgets, widget.id, candidate);
+        onChange();
+      } else if (deferred) { render(deferred); }
+    }
+
+    function pointerMove(pointer) {
+      if (matches(pointer)) {
+        dragging ||= Math.hypot(pointer.clientX - startX, pointer.clientY - startY) >= 3;
+        pointer.preventDefault();
+        update(pointer);
+      }
+    }
+    function pointerUp(pointer) { if (matches(pointer)) { update(pointer); finish(true); } }
+    function pointerCancel(pointer) { if (matches(pointer)) finish(false); }
+    function keyDown(key) { if (key.key === 'Escape') { key.preventDefault(); key.stopPropagation(); finish(false); } }
+    function windowBlur() { finish(false); }
+    const scrollTimer = window.setInterval(() => {
+      if (!scroll || !dragging) return;
+      const bounds = scroll.getBoundingClientRect();
+      const step = (position, start, end) => position < start + 32 ? -16 : position > end - 32 ? 16 : 0;
+      const x = scroll.scrollLeft, y = scroll.scrollTop;
+      scroll.scrollLeft += step(lastPointer.clientX, bounds.left, bounds.right);
+      scroll.scrollTop += step(lastPointer.clientY, bounds.top, bounds.bottom);
+      if (x !== scroll.scrollLeft || y !== scroll.scrollTop) update(lastPointer);
+    }, 30);
+    activeGesture = { cancel: () => finish(false) };
+    document.addEventListener('pointermove', pointerMove, true);
+    document.addEventListener('pointerup', pointerUp, true);
+    document.addEventListener('pointercancel', pointerCancel, true);
+    document.addEventListener('keydown', keyDown, true);
+    window.addEventListener('blur', windowBlur);
+    handle.addEventListener('lostpointercapture', pointerCancel);
+    try { handle.setPointerCapture?.(pointerId); } catch (error) { /* Document listeners also cover older SWT browsers. */ }
+  }
+
   function buildHeader(widget, dashboard, onChange) {
     const header = document.createElement('header');
     header.className = 'widget-header';
+    const move = document.createElement('button');
+    move.type = 'button';
+    move.className = 'widget-drag-handle';
+    move.textContent = '⠿';
+    move.title = 'Drag to move; arrow keys move the widget';
+    move.setAttribute('aria-label', `Move ${widget.title}`);
     const title = document.createElement('h3');
     title.className = 'widget-title';
     title.contentEditable = 'true';
@@ -188,7 +337,7 @@
       dashboard.widgets = dashboard.widgets.filter(item => item.id !== widget.id);
       onChange();
     });
-    header.append(title, source, remove);
+    header.append(move, title, source, remove);
     return header;
   }
 
@@ -365,6 +514,8 @@
   }
 
   function dispose() {
+    pendingRender = null;
+    activeGesture?.cancel();
     for (const observer of resizeObservers.values()) observer.disconnect();
     resizeObservers.clear();
     for (const chart of chartInstances.values()) chart.dispose();

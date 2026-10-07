@@ -39,6 +39,26 @@ reutilizable: asigna su consulta desde **Source**. El SQL se conserva como texto
 las consultas con parámetros del editor SQL deben llevar valores concretos para
 que el trabajo del dashboard pueda ejecutarlas.
 
+## Mover y redimensionar widgets
+
+Arrastra el botón **⠿** o el espacio de la cabecera para mover un widget. Para
+cambiar su ancho y alto, mantén pulsada la esquina inferior derecha **◢** y
+arrastra el ratón. El gráfico se adapta durante el redimensionado y el contorno
+indica dónde quedará. Al soltar, los widgets que se crucen se recolocan sin
+solaparse. **Escape** cancela el gesto. El área se desplaza al acercar el ratón
+a sus bordes durante un arrastre.
+
+El título sigue siendo editable con un clic, y el cuerpo del gráfico conserva
+sus interacciones. También puedes enfocar los botones de mover/redimensionar
+y usar las flechas del teclado. Guarda el dashboard para conservar el diseño.
+
+El JSON registra `layout: { x, y, width, height }` para cada widget: posiciones
+desde cero, ancho en una cuadrícula de 12 columnas y alto en filas de 40 px,
+con separación de 8 px. El ancho mínimo es 4 columnas y el alto mínimo 5 filas.
+Los diseños antiguos con `columnSpan`/`rowSpan` se convierten automáticamente.
+En ventanas estrechas la cuadrícula permite desplazamiento horizontal y
+conserva las posiciones guardadas.
+
 ## Qué archivo editar
 
 El **JSON es el documento principal**. El `.sql` es una copia generada, organizada
@@ -77,6 +97,19 @@ npm install --prefix .dev/browser-tests --no-audit --no-fund linkedom@0.18.13
 .\scripts\validate.ps1 -DBeaverPlugins .dev\dbeaver-26.2.2\dbeaver\plugins
 node scripts/test-plugin-registry.js
 ```
+
+Para probar los gestos reales con ratón/teclado y ECharts en Edge sin abrir una
+ventana visible, genera primero los datasets de MariaDB descritos abajo y ejecuta:
+
+```powershell
+npm install --prefix .dev/browser-tests --no-audit --no-fund --no-save playwright@1.63.0
+node scripts/test-dashboard-browser.js
+```
+
+La prueba incluye movimiento, redimensionado, Escape, edición del título,
+guardado/reapertura, tema oscuro y una ventana estrecha. La captura se guarda
+en `.dev/screenshots/dashboard-layout.png`. Usa una sesión aislada de Edge;
+no controla la sesión de DBeaver abierta por el usuario.
 
 La validación compila el plugin contra DBeaver y comprueba el esquema portátil,
 SQL Unicode, fuentes independientes, reapertura sin resultado activo, selección

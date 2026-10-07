@@ -12,7 +12,7 @@ const fixtureQueries = fs.readFileSync(path.join(root, 'dev/mariadb/chart-querie
 const echarts = require(path.join(web, 'echarts.min.js'));
 const sandbox = { window: { echarts } };
 vm.createContext(sandbox);
-for (const file of ['analytics.js', 'world-map.js', 'dashboard.js']) vm.runInContext(fs.readFileSync(path.join(web, file), 'utf8'), sandbox);
+for (const file of ['analytics.js', 'world-map.js', 'dashboard-layout.js', 'dashboard.js']) vm.runInContext(fs.readFileSync(path.join(web, file), 'utf8'), sandbox);
 const analytics = sandbox.window.DBeaverEChartsAnalytics;
 const dashboards = sandbox.window.DBeaverEChartsDashboard;
 const output = path.join(root, '.dev/mariadb-gallery');

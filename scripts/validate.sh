@@ -39,6 +39,12 @@ if command -v node >/dev/null 2>&1; then
   done
   node scripts/test-analytics.js
   node scripts/test-dashboard.js
+  node scripts/test-dashboard-layout.js
+  if [[ -d .dev/browser-tests/node_modules/linkedom ]]; then
+    node scripts/test-dashboard-bridge.js
+  else
+    echo 'SKIP: DOM/bridge tests require npm install --prefix .dev/browser-tests linkedom@0.18.13'
+  fi
 else
   echo 'SKIP: node is not installed'
 fi
