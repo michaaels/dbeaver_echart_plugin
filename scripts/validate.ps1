@@ -44,6 +44,14 @@ if ($Node) {
     if ($LASTEXITCODE -ne 0) { throw 'Analytical chart option tests failed' }
     & node 'scripts\test-dashboard.js'
     if ($LASTEXITCODE -ne 0) { throw 'Dashboard schema tests failed' }
+    & node 'scripts\test-dashboard-layout.js'
+    if ($LASTEXITCODE -ne 0) { throw 'Dashboard layout tests failed' }
+    if (Test-Path -LiteralPath '.dev\browser-tests\node_modules\linkedom') {
+        & node 'scripts\test-dashboard-bridge.js'
+        if ($LASTEXITCODE -ne 0) { throw 'Dashboard DOM/bridge tests failed' }
+    } else {
+        Write-Host 'SKIP: DOM/bridge tests require npm install --prefix .dev/browser-tests linkedom@0.18.13'
+    }
 } else {
     Write-Host 'SKIP: node is not installed'
 }

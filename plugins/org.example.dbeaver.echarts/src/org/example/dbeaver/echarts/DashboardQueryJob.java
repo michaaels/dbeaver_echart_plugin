@@ -29,7 +29,7 @@ final class DashboardQueryJob extends AbstractJob {
         "(?i)\\b(insert|update|delete|merge|drop|alter|truncate|create|grant|revoke|call|execute)\\b"
     );
 
-    private final DBCExecutionContext context;
+    private final java.util.function.Supplier<DBCExecutionContext> context;
     private final String sql;
     private final int maxRows;
     private final int maxCells;
@@ -37,7 +37,7 @@ final class DashboardQueryJob extends AbstractJob {
     private final Consumer<Exception> onFailure;
 
     DashboardQueryJob(
-        DBCExecutionContext context,
+        java.util.function.Supplier<DBCExecutionContext> context,
         String sql,
         int maxRows,
         int maxCells,
@@ -78,7 +78,7 @@ final class DashboardQueryJob extends AbstractJob {
 
     private String execute(DBRProgressMonitor monitor) throws Exception {
         try (
-            DBCSession session = context.openSession(monitor, DBCExecutionPurpose.USER, "ECharts dashboard widget");
+            DBCSession session = context.get().openSession(monitor, DBCExecutionPurpose.USER, "ECharts dashboard widget");
             DBCStatement statement = session.prepareStatement(DBCStatementType.QUERY, sql, false, false, false)
         ) {
             statement.setLimit(0, maxRows);

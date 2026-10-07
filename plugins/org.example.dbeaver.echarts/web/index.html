@@ -61,10 +61,14 @@
         </select>
       </label>
       <div id="dashboardActions" class="dashboard-actions" hidden>
+        <input id="dashboardTitle" type="text" maxlength="200" aria-label="Dashboard title" placeholder="Dashboard title">
         <button id="addWidget" type="button">Add widget</button>
         <button id="clearFilters" type="button">Clear filters</button>
         <button id="importDashboard" type="button">Import</button>
         <button id="exportDashboard" type="button">Export</button>
+        <button id="saveDashboard" type="button">Save dashboard</button>
+        <button id="openDashboard" type="button">Open dashboard</button>
+        <button id="refreshDashboard" type="button">Refresh all</button>
       </div>
       <span id="status" role="status"></span>
     </section>
@@ -86,6 +90,7 @@
   <script src="js/echarts.min.js"></script>
   <script src="js/world-map.js"></script>
   <script src="js/analytics.js"></script>
+  <script src="js/dashboard-layout.js"></script>
   <script src="js/dashboard.js"></script>
   <script src="js/chart.js"></script>
 </body>

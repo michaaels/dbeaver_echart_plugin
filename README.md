@@ -74,6 +74,11 @@ DBeaver installation.
 
 ## Eclipse PDE workflow
 
+For a browser preview with sample data and automatic reload, run
+`node scripts/preview.js` and open `http://127.0.0.1:8765`.
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the local Eclipse target,
+launch configuration, portable DBeaver setup and sample SQL workflow.
+
 Import these projects into the Eclipse workspace:
 
 - `plugins/org.example.dbeaver.echarts`
@@ -94,3 +99,12 @@ source tree. See [docs/P2-UPDATE-SITE.md](docs/P2-UPDATE-SITE.md).
 ECharts and the world GeoJSON are pinned and packaged locally. Their licenses,
 notices, hashes and refresh scripts live under `third-party/` and `scripts/`.
 Never replace them with an unpinned `latest` download.
+
+## Dashboards guardados
+
+**Save dashboard** conserva SQL y configuración en `Dashboards/ECharts`, como
+JSON versionado y copia `.sql`. **Open dashboard** abre un editor independiente
+del resultado SQL. Consulta [la guía de dashboards](docs/DASHBOARDS.md).
+
+Arrastra un widget desde su cabecera y redimensiónalo desde la esquina inferior
+derecha. Sus posiciones y tamaños se conservan en el JSON del dashboard.

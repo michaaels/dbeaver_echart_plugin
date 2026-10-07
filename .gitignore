@@ -6,3 +6,6 @@ sites/*/artifacts.jar
 sites/*/content.jar
 sites/*/features/
 sites/*/plugins/
+.dev/
+dev/DBeaver-local.target
+dev/DBeaver-ECharts-local.launch

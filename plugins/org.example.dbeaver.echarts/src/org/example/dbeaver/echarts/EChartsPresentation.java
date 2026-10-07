@@ -18,10 +18,16 @@ import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.FileDialog;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.ui.PlatformUI;
+import org.eclipse.ui.ide.IDE;
+import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.ui.themes.IThemeManager;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.model.data.DBDAttributeBinding;
+import org.jkiss.dbeaver.model.app.DBPProject;
+import org.jkiss.dbeaver.runtime.DBWorkbench;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import org.jkiss.dbeaver.ui.controls.resultset.AbstractPresentation;
 import org.jkiss.dbeaver.ui.controls.resultset.IResultSetController;
 import org.jkiss.dbeaver.ui.controls.resultset.ResultSetCopySettings;
@@ -36,6 +42,8 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * Read-only ECharts presentation for the active DBeaver ResultSet.
@@ -51,6 +59,10 @@ public final class EChartsPresentation extends AbstractPresentation {
     private BrowserFunction importDashboardFunction;
     private BrowserFunction exportDashboardFunction;
     private BrowserFunction executeWidgetQueryFunction;
+    private BrowserFunction saveDashboardFunction;
+    private BrowserFunction openDashboardFunction;
+    private BrowserFunction listConnectionsFunction;
+    private BrowserFunction dashboardChangedFunction;
     private DBeaverResultSetAdapter adapter;
     private ChartConfigurationStore configurationStore;
     private EChartsSnapshotJob snapshotJob;
@@ -59,6 +71,11 @@ public final class EChartsPresentation extends AbstractPresentation {
     private volatile String latestSnapshot;
     private long snapshotGeneration;
     private boolean browserReady;
+    private String standaloneDocument;
+    private DBPProject dashboardProject;
+    private Consumer<String> configurationChanged;
+    private Function<String, String> saveDocument;
+    private Runnable markDirty;
     private final Map<String, DashboardQueryJob> widgetQueryJobs = new ConcurrentHashMap<>();
     private final Map<String, Long> widgetQueryGenerations = new ConcurrentHashMap<>();
 
@@ -68,6 +85,23 @@ public final class EChartsPresentation extends AbstractPresentation {
         display = parent.getDisplay();
         adapter = new DBeaverResultSetAdapter(controller);
         configurationStore = new ChartConfigurationStore(ChartConfigurationStore.sourceKey(controller));
+        dashboardProject = controller.getExecutionContext() == null ? null
+            : controller.getExecutionContext().getDataSource().getContainer().getProject();
+        createBrowser(parent);
+    }
+
+    void createStandalone(Composite parent, String document, DBPProject project,
+                          Consumer<String> onChange, Function<String, String> onSave, Runnable onDirty) {
+        standaloneDocument = document;
+        dashboardProject = project;
+        configurationChanged = onChange;
+        saveDocument = onSave;
+        markDirty = onDirty;
+        createBrowser(parent);
+    }
+
+    private void createBrowser(Composite parent) {
+        display = parent.getDisplay();
 
         root = new Composite(parent, SWT.NONE);
         root.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
@@ -134,7 +168,8 @@ public final class EChartsPresentation extends AbstractPresentation {
                     if (arguments.length != 1 || !(arguments[0] instanceof String configuration)) {
                         return Boolean.FALSE;
                     }
-                    configurationStore.save(configuration);
+                    if (configurationChanged != null) configurationChanged.accept(configuration);
+                    else configurationStore.save(configuration);
                     return Boolean.TRUE;
                 }
             };
@@ -148,7 +183,7 @@ public final class EChartsPresentation extends AbstractPresentation {
             refreshResultFunction = new BrowserFunction(browser, "dbeaverRefreshResult", true, new String[0]) {
                 @Override
                 public Object function(Object[] arguments) {
-                    controller.refresh();
+                    if (controller != null) controller.refresh();
                     return Boolean.TRUE;
                 }
             };
@@ -170,10 +205,32 @@ public final class EChartsPresentation extends AbstractPresentation {
             executeWidgetQueryFunction = new BrowserFunction(browser, "dbeaverExecuteWidgetQuery", true, new String[0]) {
                 @Override
                 public Object function(Object[] arguments) {
-                    if (arguments.length != 2 || !(arguments[0] instanceof String widgetId) || !(arguments[1] instanceof String sql)) {
+                    if (arguments.length != 3 || !(arguments[0] instanceof String widgetId)
+                        || !(arguments[1] instanceof String sql) || !(arguments[2] instanceof String source)) {
                         return Boolean.FALSE;
                     }
-                    scheduleWidgetQuery(widgetId, sql);
+                    scheduleWidgetQuery(widgetId, sql, source);
+                    return Boolean.TRUE;
+                }
+            };
+            saveDashboardFunction = new BrowserFunction(browser, "dbeaverSaveDashboard", true, new String[0]) {
+                @Override
+                public Object function(Object[] arguments) {
+                    return arguments.length == 1 && arguments[0] instanceof String document ? saveDashboard(document) : null;
+                }
+            };
+            openDashboardFunction = new BrowserFunction(browser, "dbeaverOpenDashboard", true, new String[0]) {
+                @Override
+                public Object function(Object[] arguments) { return openDashboard(); }
+            };
+            listConnectionsFunction = new BrowserFunction(browser, "dbeaverListConnections", true, new String[0]) {
+                @Override
+                public Object function(Object[] arguments) { return DashboardConnections.list(); }
+            };
+            dashboardChangedFunction = new BrowserFunction(browser, "dbeaverDashboardChanged", true, new String[0]) {
+                @Override
+                public Object function(Object[] arguments) {
+                    if (markDirty != null) markDirty.run();
                     return Boolean.TRUE;
                 }
             };
@@ -244,8 +301,8 @@ public final class EChartsPresentation extends AbstractPresentation {
 
     private void reloadBrowserDataOnUiThread() {
         adapter = new DBeaverResultSetAdapter(controller);
-        configurationStore = new ChartConfigurationStore(ChartConfigurationStore.sourceKey(controller));
-        publishConfiguration();
+        // Refresh rows without replacing the in-memory dashboard or its query snapshots.
+        // File persistence handles dashboards independently of result-tab preferences.
         if (browserReady) {
             executeBrowser("if (window.DBeaverECharts) { window.DBeaverECharts.setLoading(); }");
         }
@@ -261,7 +318,9 @@ public final class EChartsPresentation extends AbstractPresentation {
             return;
         }
         browserReady = true;
-        publishConfiguration();
+        if (standaloneDocument != null) {
+            executeBrowser("window.DBeaverECharts.loadDashboard(JSON.parse(" + JsonWriter.write(standaloneDocument) + "),true);");
+        } else { publishConfiguration(); }
         publishTheme();
         scheduleSnapshot();
     }
@@ -349,8 +408,8 @@ public final class EChartsPresentation extends AbstractPresentation {
         if (!browserReady) {
             return;
         }
-        Color background = controller.getDefaultBackground();
-        Color foreground = controller.getDefaultForeground();
+        Color background = controller == null ? root.getBackground() : controller.getDefaultBackground();
+        Color foreground = controller == null ? root.getForeground() : controller.getDefaultForeground();
         String backgroundColor = rgb(background);
         String foregroundColor = rgb(foreground);
         double luminance = (background.getRed() * 0.299 + background.getGreen() * 0.587 + background.getBlue() * 0.114) / 255.0;
@@ -418,14 +477,15 @@ public final class EChartsPresentation extends AbstractPresentation {
         FileDialog dialog = new FileDialog(currentBrowser.getShell(), SWT.OPEN);
         dialog.setText("Import ECharts dashboard");
         dialog.setFilterExtensions(new String[] {"*.echarts-dashboard.json", "*.json", "*.*"});
+        setDashboardFolder(dialog);
         String selected = dialog.open();
         if (selected == null) {
             return null;
         }
         try {
-            String dashboard = Files.readString(Path.of(selected), StandardCharsets.UTF_8);
-            return dashboard.length() <= 1_048_576 ? dashboard : null;
+            return DashboardFiles.read(Path.of(selected));
         } catch (Exception e) {
+            showDashboardError(e);
             return null;
         }
     }
@@ -445,21 +505,88 @@ public final class EChartsPresentation extends AbstractPresentation {
             return Boolean.FALSE;
         }
         try {
-            Files.writeString(Path.of(selected), dashboard, StandardCharsets.UTF_8);
+            DashboardFiles.write(Path.of(selected), dashboard);
             return Boolean.TRUE;
         } catch (Exception e) {
+            showDashboardError(e);
             return Boolean.FALSE;
         }
     }
 
-    private void scheduleWidgetQuery(String widgetId, String sql) {
+    private String saveDashboard(String document) {
+        if (saveDocument != null) return saveDocument.apply(document);
+        try {
+            JsonObject dashboard = DashboardFiles.parse(document);
+            Path folder = dashboardFolder();
+            Files.createDirectories(folder);
+            FileDialog dialog = new FileDialog(browser.getShell(), SWT.SAVE);
+            dialog.setText("Save ECharts dashboard (JSON and SQL)");
+            dialog.setFilterPath(folder.toString());
+            String name = DashboardFiles.string(dashboard, "title").replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", "_")
+                .replaceAll("[ .]+$", "");
+            if (name.isBlank()) name = "dashboard";
+            dialog.setFileName(name + DashboardFiles.SUFFIX);
+            dialog.setFilterExtensions(new String[] {"*.echarts-dashboard.json"});
+            dialog.setOverwrite(true);
+            String selected = dialog.open();
+            if (selected == null) return null;
+            Path file = Path.of(selected);
+            DashboardFiles.write(file, document);
+            if (dashboardProject != null) dashboardProject.refreshProject();
+            return file.toString();
+        } catch (Exception e) { showDashboardError(e); return null; }
+    }
+
+    private Path dashboardFolder() {
+        DBPProject project = dashboardProject != null ? dashboardProject
+            : DBWorkbench.getPlatform().getWorkspace().getActiveProject();
+        if (project == null) throw new IllegalStateException("Open a DBeaver project first.");
+        return project.getAbsolutePath().resolve("Dashboards").resolve("ECharts");
+    }
+
+    private void setDashboardFolder(FileDialog dialog) {
+        try { dialog.setFilterPath(dashboardFolder().toString()); } catch (RuntimeException ignored) { }
+    }
+
+    private Boolean openDashboard() {
+        FileDialog dialog = new FileDialog(browser.getShell(), SWT.OPEN);
+        dialog.setText("Open ECharts dashboard");
+        dialog.setFilterExtensions(new String[] {"*.echarts-dashboard.json", "*.json"});
+        setDashboardFolder(dialog);
+        String selected = dialog.open();
+        if (selected == null) return Boolean.FALSE;
+        try {
+            Path file = Path.of(selected);
+            DashboardFiles.read(file);
+            IDE.openEditor(PlatformUI.getWorkbench().getActiveWorkbenchWindow().getActivePage(),
+                file.toUri(), DashboardEditor.ID, true);
+            return Boolean.TRUE;
+        } catch (Exception e) { showDashboardError(e); return Boolean.FALSE; }
+    }
+
+    private void showDashboardError(Exception error) {
+        MessageDialog.openError(browser.getShell(), "ECharts dashboard", safeMessage(error));
+    }
+
+    String currentDashboardDocument() {
+        if (!isBrowserAvailable() || !browserReady) throw new IllegalStateException("The dashboard is still loading.");
+        Object value = browser.evaluate("return JSON.stringify(window.DBeaverECharts.dashboardDocument());");
+        if (!(value instanceof String document)) throw new IllegalStateException("The dashboard could not be read.");
+        return document;
+    }
+
+    private void scheduleWidgetQuery(String widgetId, String sql, String sourceJson) {
         DashboardQueryJob previous = widgetQueryJobs.remove(widgetId);
         if (previous != null) {
             previous.cancel();
         }
         long generation = widgetQueryGenerations.merge(widgetId, 1L, Long::sum);
+        JsonObject source = JsonParser.parseString(sourceJson).getAsJsonObject();
+        boolean hasConnection = !DashboardFiles.string(source, "connectionId").isBlank()
+            || !DashboardFiles.string(source, "connection").isBlank();
         DashboardQueryJob job = new DashboardQueryJob(
-            controller.getExecutionContext(),
+            () -> hasConnection || controller == null ? DashboardConnections.resolve(source, dashboardProject)
+                : controller.getExecutionContext(),
             sql,
             EChartsPreferences.getMaxRows(),
             EChartsPreferences.getMaxCells(),
@@ -535,6 +662,10 @@ public final class EChartsPresentation extends AbstractPresentation {
         }
         if (executeWidgetQueryFunction != null && !executeWidgetQueryFunction.isDisposed()) {
             executeWidgetQueryFunction.dispose();
+        }
+        for (BrowserFunction function : new BrowserFunction[] {saveDashboardFunction, openDashboardFunction,
+                listConnectionsFunction, dashboardChangedFunction}) {
+            if (function != null && !function.isDisposed()) function.dispose();
         }
         for (DashboardQueryJob job : widgetQueryJobs.values()) {
             job.cancel();
