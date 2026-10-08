@@ -1,6 +1,6 @@
 # Revisión de producción del plugin independiente
 
-Fecha de revisión: 2026-10-07. Estado: beta funcional; todavía no certificada
+Fecha de revisión: 2026-10-08. Estado: beta funcional; todavía no certificada
 para producción. Esta revisión identifica lo observado en el código y las
 pruebas disponibles; no sustituye una auditoría completa.
 
@@ -44,13 +44,28 @@ También volvió a pasar la prueba de movimiento, tamaño y reapertura del dashb
 Queda probar nombres extensos, muchas series, tamaños mínimos de widget,
 escalado de pantalla de 125/150/200 %, otros idiomas y las plataformas SWT.
 
+## Edición de widgets en el dashboard
+
+El editor independiente ya permite añadir widgets con SQL/conexión propios,
+ejecutar una vista previa y seleccionar tipo, columnas, series y ejes. **Edit**
+reemplaza el editor desplegable que podía quedar fuera del área visible del widget.
+Los borradores están separados del modelo guardado y sobreviven a refrescos;
+Apply reutiliza los datos de la vista previa y Cancel/Escape los descarta.
+Los mensajes de carga/error tampoco cubren ahora los botones de la cabecera.
+
+Las pruebas DOM y Edge comprueban creación sin resultado activo, consultas
+independientes, cambio de conexión/tipo, columnas inferidas, doble eje, gauge de
+una columna, cancelación de preview, conservación de borradores y guardado/reapertura.
+Al validar la vista previa se corrigió también la escala de barras para incluir
+el cero; así el valor positivo más pequeño no desaparece en el límite del eje.
+
 ## Antes de una versión de producción
 
 | Prioridad | Pendiente y evidencia | Criterio de cierre |
 |---|---|---|
 | P0 | **SQL y confianza: controles implementados; certificación pendiente.** Revisión explícita, aprobación en memoria ligada a SQL/conexión y lexer conservador. | Verificar los dialectos/roles admitidos con bases reales y revisión de seguridad. Documentar rechazos del lexer; no presentarlo como garantía de lectura sin efectos secundarios. |
 | P0 | **Tiempo, cancelación y aislamiento: controles implementados; drivers pendientes.** Statement timeout + deadline, cancelación asíncrona, contexto propio y cuatro jobs concurrentes. | Probar consultas bloqueadas, transacciones del editor, apertura de conexión, fetching, desconexión y cierre con drivers reales. Publicar el alcance del soporte de cancelación por driver. |
-| P0 | **Instalación y actualización.** Existen feature y definición del sitio PDE; no hay build automatizado de una entrega P2 ni CI versionada. Las pruebas actuales compilan fuentes o empaquetan un JAR de pruebas. | Build reproducible con target fijado, artefacto P2 versionado y publicable, instalación/actualización/desinstalación en un DBeaver limpio y verificación de las licencias y recursos incluidos. |
+| P0 | **Instalación y actualización: empaquetado local implementado.** Build automático desde fuentes con bytecode 21, feature fijada al bundle y ZIP P2 versionado con checksum y metadatos del build. Instalación/desinstalación/reinstalación comprobadas en DBeaver oficial 26.2.2 limpio con Java incluido; recursos y licencias verificados en el bundle instalado. | Completar actualización entre entregas, CI con target fijado, firma y canal público de distribución. Los timestamps del publisher impiden prometer hashes idénticos entre builds. |
 | P0 | **Pruebas del producto.** Compilación y registros se verificaron en DBeaver 26.2.2; Edge automatizado usa un puente SQL simulado con datasets de MariaDB. | Completar la prueba SWT con consultas reales: abrir/guardar, Ctrl+S, dirty state, conexiones, refresco, cierre durante consultas, zoom, exportación y reinicio. Certificar Windows/Linux/macOS o publicar explícitamente un alcance menor. |
 | P1 | **Memoria y fluidez.** Hay límites por snapshot, pero hasta 24 widgets; cada render del dashboard destruye y crea sus gráficos. | Medir un dashboard de 24 widgets y consultas al límite; fijar presupuesto global, actualizar sólo widgets afectados y comprobar liberación de gráficos, jobs, observers y timers. |
 | P1 | **Datos y filtros.** Los filtros actúan en el snapshot ya obtenido; los límites pueden truncarlo. No hay parámetros SQL reutilizables. | Mostrar claramente datos parciales, fecha de actualización y errores por widget; probar NULL, decimales, enteros grandes, zonas horarias y categorías repetidas. Definir si los filtros son locales o parámetros de consultas antes de presentar los indicadores como totales. |

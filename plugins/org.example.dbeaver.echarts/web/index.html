@@ -99,11 +99,51 @@
     </div>
   </dialog>
 
+  <dialog id="widgetEditor" class="widget-editor" aria-labelledby="widgetEditorHeading">
+    <h2 id="widgetEditorHeading">Edit widget</h2>
+    <div class="widget-editor-fields">
+      <label>Title<input id="widgetEditorName" type="text" maxlength="200"></label>
+      <label>Connection<select id="widgetEditorConnection"></select></label>
+    </div>
+    <label class="widget-editor-query">SQL for this chart
+      <textarea id="widgetEditorSql" spellcheck="false" aria-label="Widget SQL" placeholder="SELECT category, value FROM ..."></textarea>
+    </label>
+    <div class="widget-editor-query-actions">
+      <button id="widgetEditorRun" type="button">Run preview</button>
+      <button id="widgetEditorStop" type="button" disabled>Stop preview</button>
+      <span id="widgetEditorStatus" role="status"></span>
+    </div>
+    <p id="widgetEditorError" role="alert" hidden></p>
+    <div class="widget-editor-fields">
+      <label>Chart<select id="widgetEditorType"></select></label>
+      <label>X / category<select id="widgetEditorCategory"></select></label>
+      <label>Refresh<select id="widgetEditorRefresh">
+        <option value="manual:0">Manual</option>
+        <option value="interval:30">Every 30 s</option>
+        <option value="interval:60">Every minute</option>
+        <option value="interval:300">Every 5 min</option>
+      </select></label>
+    </div>
+    <fieldset class="widget-editor-series"><legend>Y series and axes</legend><div id="widgetEditorSeries"></div></fieldset>
+    <div class="widget-editor-marks">
+      <label><input id="widgetEditorMean" type="checkbox"> Mean line</label>
+      <label><input id="widgetEditorRange" type="checkbox"> Min/max area</label>
+      <label><input id="widgetEditorScale" type="checkbox"> Visual scale</label>
+    </div>
+    <div id="widgetEditorPreview" class="widget-editor-preview" aria-label="Chart preview"></div>
+    <div class="widget-editor-data"><table id="widgetEditorData" aria-label="Preview result rows"></table></div>
+    <div class="widget-editor-actions">
+      <button id="widgetEditorSave" type="button">Apply widget</button>
+      <button id="widgetEditorCancel" type="button">Cancel</button>
+    </div>
+  </dialog>
+
   <script src="js/echarts.min.js"></script>
   <script src="js/world-map.js"></script>
   <script src="js/analytics.js"></script>
   <script src="js/dashboard-layout.js"></script>
   <script src="js/dashboard.js"></script>
+  <script src="js/widget-editor.js"></script>
   <script src="js/chart.js"></script>
 </body>
 </html>

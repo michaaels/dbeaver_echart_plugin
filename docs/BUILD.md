@@ -35,9 +35,14 @@ The scripts verify the expected hashes before replacing existing files.
 
 ## P2 repository
 
-Open `sites/org.example.dbeaver.echarts.site/category.xml` in PDE and choose
-**Build All**. The generated P2 directory can be served as static content and
-installed through DBeaver's **Help → Install New Software** dialog.
+Use `node scripts/build-p2.js --eclipse <SDK home> --jdk <compiler home>
+--publisher-jdk <publisher JVM home> --dbeaver <target home>` to compile from
+source and generate an installable ZIP and local P2 directory. The
+[P2 guide](P2-UPDATE-SITE.md) documents installation, qualifiers and the clean
+distribution install/uninstall/reinstall test.
+
+The PDE alternative remains available: open the site's `category.xml` and
+choose **Build All**.
 
 For reproducible CI, pin the DBeaver target repository, run `scripts/validate`,
 build the plugin and feature, then publish the generated update site. Do not use

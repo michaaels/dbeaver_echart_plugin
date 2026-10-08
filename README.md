@@ -13,6 +13,7 @@ data conversion, chart construction and dashboards in separate modules.
 - Canvas and SVG renderers with DBeaver theme synchronization.
 - Geographic scatter charts using a locally packaged world map.
 - Multi-widget dashboards with persisted JSON configuration.
+- Standalone widget authoring: SQL and connection per chart, query preview, columns, series and axes.
 - Active-result and independent read-only SQL sources per widget.
 - Manual, result-driven and interval refresh policies.
 - Shared filters, cross-filter events and drill-down.
@@ -48,12 +49,20 @@ Important boundaries:
 - `EChartsPresentation` owns SWT lifecycle and marshals browser calls to the UI thread.
 - `analytics.js` contains pure chart-option builders.
 - `dashboard.js` owns the versioned dashboard model and view rendering.
+- `widget-editor.js` owns detached widget drafts, preview data and chart configuration.
 
 ## Development baseline
 
 - Java 21
 - Apache ECharts 6.1.0
 - Verified compile and registry target: DBeaver Community 26.2.2 on Windows x86_64
+
+## Install in normal DBeaver
+
+Use the generated P2 ZIP through **Help → Install New Software → Add → Archive**,
+select **DBeaver ECharts Presentation**, accept the license and restart DBeaver.
+Eclipse is not needed to use the installed plugin. See the
+[installation and package build guide](docs/P2-UPDATE-SITE.md).
 
 See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) before widening the supported range.
 Production release as an independent plugin still has open requirements;
@@ -113,3 +122,8 @@ del resultado SQL. Consulta [la guía de dashboards](docs/DASHBOARDS.md).
 
 Arrastra un widget desde su cabecera y redimensiónalo desde la esquina inferior
 derecha. Sus posiciones y tamaños se conservan en el JSON del dashboard.
+
+Desde el dashboard, **Add widget** crea un gráfico con su propio SQL y conexión.
+**Edit** modifica uno existente; **Run preview** carga sus columnas para elegir
+tipo de gráfico, categoría, series y ejes. **Apply widget** aplica el borrador
+y **Save dashboard** lo guarda junto con los demás gráficos.

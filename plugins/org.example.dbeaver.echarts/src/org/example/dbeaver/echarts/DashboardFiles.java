@@ -44,7 +44,7 @@ final class DashboardFiles {
             if (id.isBlank() || !ids.add(id)) throw new IllegalArgumentException("Invalid or duplicate widget ID.");
             JsonObject source = widget.getAsJsonObject("source");
             if (source == null || string(source, "sql").isBlank()) {
-                throw new IllegalArgumentException("Widget \"" + string(widget, "title") + "\" has no SQL. Assign it in Source.");
+                throw new IllegalArgumentException("Widget \"" + string(widget, "title") + "\" has no SQL. Assign it in Edit.");
             }
             source.addProperty("kind", "savedQuery");
             JsonObject policy = widget.getAsJsonObject("refreshPolicy");
@@ -74,7 +74,7 @@ final class DashboardFiles {
 
     static String sqlDocument(JsonObject document) {
         StringBuilder sql = new StringBuilder("-- ECharts dashboard: " + comment(string(document, "title"))
-            + "\n-- Generated from JSON. Edit widget queries in the dashboard Source editor.\n\n");
+            + "\n-- Generated from JSON. Edit widget queries with the dashboard Edit button.\n\n");
         for (JsonElement element : document.getAsJsonArray("widgets")) {
             JsonObject widget = element.getAsJsonObject();
             JsonObject source = widget.getAsJsonObject("source");

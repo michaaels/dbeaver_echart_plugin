@@ -8,6 +8,7 @@
 - Binary values use metadata placeholders and unsafe integers are serialized as strings.
 - Dashboard imports are capped at 1 MiB and normalized to bounded collections.
 - Saved SQL waits for explicit review of the query and connection. Session approvals are bound to exact SQL and connection references and are checked again in Java; they are never saved in dashboard files.
+- The widget editor's Run preview explicitly executes the displayed SQL on its displayed connection through the same Java approval/query controls. Preview data stays in memory and is reused on Apply; cancelled drafts do not modify dashboard sources.
 - Widget SQL permits one conservatively validated query and runs with the selected connection's database permissions in an owned isolated context.
 - No remote map tiles, scripts, fonts, telemetry or iframes are loaded.
 

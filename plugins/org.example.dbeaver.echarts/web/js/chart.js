@@ -129,6 +129,7 @@
     }));
     els.renderer.addEventListener('change', () => updateConfiguration(() => {
       state.renderer = els.renderer.value;
+      window.DBeaverWidgetEditor.setAppearance(state.theme, state.renderer);
       recreateChart();
     }));
     for (const name of ['markLine', 'markArea', 'visualMap']) {
@@ -288,6 +289,7 @@
 
   function setTheme(theme) {
     state.theme = { ...DEFAULT_THEME, ...(theme || {}) };
+    window.DBeaverWidgetEditor.setAppearance(state.theme, state.renderer);
     const root = document.documentElement;
     root.style.setProperty('--bg', state.theme.background);
     root.style.setProperty('--fg', state.theme.foreground);
@@ -498,31 +500,72 @@
         requestWidgetRefresh(widget);
         renderDashboard();
       },
-      onCancel: widget => { stopWidgetQuery(widget); renderDashboard(); }
+      onCancel: widget => { stopWidgetQuery(widget); renderDashboard(); },
+      onEdit: widget => editDashboardWidget(widget)
     });
     requestMissingWidgetSnapshots();
     updateDashboardStatus();
   }
 
   function addDashboardWidget() {
-    if (!state.snapshot) return;
     if (state.dashboard.widgets.length >= 24) {
       els.status.textContent = 'A dashboard supports up to 24 widgets.';
       return;
     }
-    const widget = window.DBeaverEChartsDashboard.createWidget(
-      currentChartConfiguration(),
-      state.snapshot
-    );
-    if (widget.source.sql.trim()) {
-      widget.source.kind = 'savedQuery';
-      widget.refreshPolicy.mode = 'manual';
-      state.widgetSnapshots.set(widget.id, state.snapshot);
+    const snapshot = state.standalone ? null : state.snapshot;
+    const widget = window.DBeaverEChartsDashboard.createWidget(snapshot ? currentChartConfiguration() : {
+      chartType: 'line', xColumn: null, yColumns: [], yAxes: {}, marks: {}
+    }, snapshot);
+    widget.source.kind = 'savedQuery';
+    widget.refreshPolicy = { mode: 'manual', intervalSeconds: 0 };
+    if (!snapshot && state.dashboard.widgets.length) {
+      const source = state.dashboard.widgets.at(-1).source;
+      for (const field of ['connectionId', 'connection', 'project']) widget.source[field] = source[field];
     }
-    state.dashboard.widgets.push(widget);
-    state.viewMode = 'dashboard';
-    els.viewMode.value = state.viewMode;
-    dashboardChanged();
+    editDashboardWidget(widget, true, snapshot);
+  }
+
+  function editDashboardWidget(widget, isNew = false, seedSnapshot = null) {
+    window.DBeaverWidgetEditor.open({
+      widget, isNew, snapshot: seedSnapshot || state.widgetSnapshots.get(widget.id)
+        || (widget.source.kind === 'activeResultSet' ? state.snapshot : null),
+      theme: state.theme, renderer: state.renderer,
+      cancelPreview: id => window.dbeaverCancelWidgetQuery?.(id, true),
+      runPreview: (id, source) => {
+        // The user sees the exact draft SQL and connection and explicitly clicks Run preview.
+        if (window.dbeaverApproveWidgetQueries?.(JSON.stringify([{ id, sql: source.sql, source }])) !== true
+          || window.dbeaverExecuteWidgetQuery?.(id, source.sql, JSON.stringify(source)) !== true) {
+          throw new Error('DBeaver could not run the preview. Check the SQL and connection.');
+        }
+      },
+      save: (draft, snapshot, previewApproved) => {
+        const index = state.dashboard.widgets.findIndex(item => item.id === widget.id);
+        if (!isNew && index < 0) throw new Error('This widget was removed while editing.');
+        if (isNew && state.dashboard.widgets.length >= 24) throw new Error('A dashboard supports up to 24 widgets.');
+        const normalized = window.DBeaverEChartsDashboard.normalizeDashboard({ schemaVersion: 1, widgets: [draft] }).widgets[0];
+        if (isNew) state.dashboard.widgets.push(normalized);
+        else state.dashboard.widgets[index] = normalized;
+        reconcileQuerySources();
+        if (snapshot && (isNew || previewApproved)) {
+          if (state.widgetRequests.has(normalized.id)) {
+            window.dbeaverCancelWidgetQuery?.(normalized.id);
+            state.widgetRequests.delete(normalized.id);
+          }
+          state.widgetSnapshots.set(normalized.id, snapshot);
+          state.widgetErrors.delete(normalized.id);
+        }
+        if (previewApproved && window.dbeaverApproveWidgetQueries?.(JSON.stringify([
+          { id: normalized.id, sql: normalized.source.sql, source: normalized.source }
+        ])) === true) {
+          state.queryApprovals.set(normalized.id, sourceSignature(normalized));
+          state.pausedWidgets.delete(normalized.id);
+          state.widgetRefreshTimes.set(normalized.id, Date.now());
+        }
+        state.viewMode = 'dashboard';
+        els.viewMode.value = 'dashboard';
+        dashboardChanged();
+      }
+    });
   }
 
   function dashboardChanged() {
@@ -566,7 +609,7 @@
       const title = document.createElement('h3');
       title.textContent = widget.title;
       const connection = document.createElement('div');
-      connection.textContent = `${widget.source.project || 'Dashboard project'} / ${widget.source.connection || 'Choose a connection in Source'} (${widget.source.connectionId || 'legacy name reference'})`;
+      connection.textContent = `${widget.source.project || 'Dashboard project'} / ${widget.source.connection || 'Choose a connection in Edit'} (${widget.source.connectionId || 'legacy name reference'})`;
       const sql = document.createElement('pre');
       sql.textContent = widget.source.sql;
       section.append(title, connection, sql);
@@ -612,6 +655,7 @@
   }
 
   function resetDashboardQueries() {
+    window.DBeaverWidgetEditor.close();
     window.dbeaverResetDashboardQueries?.();
     state.queryApprovals.clear();
     state.sourceBindings.clear();
@@ -680,6 +724,7 @@
   }
 
   function setWidgetSnapshot(widgetId, snapshot) {
+    if (window.DBeaverWidgetEditor.receiveSnapshot(widgetId, snapshot)) return;
     if (!state.widgetRequests.has(widgetId)) return;
     try {
       validateSnapshot(snapshot);
@@ -693,6 +738,7 @@
   }
 
   function setWidgetError(widgetId, message) {
+    if (window.DBeaverWidgetEditor.receiveError(widgetId, message)) return;
     if (!state.widgetRequests.has(widgetId)) return;
     state.widgetRequests.delete(widgetId);
     state.widgetSnapshots.delete(widgetId);
@@ -775,7 +821,7 @@
 
   function documentBodyMode(standalone) {
     document.body.classList.toggle('standalone-dashboard', standalone);
-    els.addWidget.disabled = standalone;
+    els.addWidget.disabled = false;
   }
 
   function showEmpty(message) {

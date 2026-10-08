@@ -7,5 +7,6 @@ sites/*/content.jar
 sites/*/features/
 sites/*/plugins/
 .dev/
+dist/
 dev/DBeaver-local.target
 dev/DBeaver-ECharts-local.launch
