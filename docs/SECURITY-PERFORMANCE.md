@@ -10,6 +10,13 @@
 - Widget SQL permits one conservatively validated read-only statement and runs with the active connection's permissions.
 - No remote map tiles, scripts, fonts, telemetry or iframes are loaded.
 
+The current SQL check is a heuristic, not a read-only security boundary. It
+accepts some `SELECT` statements with side effects and can reject harmless
+keywords inside literals. Imported saved dashboards currently execute their
+queries on opening, using the connected user's permissions. A production
+release needs a reviewed trust/execution policy and database-enforced permissions;
+see [the readiness review](PRODUCTION-READINESS.md).
+
 ## Resource budgets
 
 Preferences default to 50,000 rows and 1,000,000 cells per snapshot. The lower

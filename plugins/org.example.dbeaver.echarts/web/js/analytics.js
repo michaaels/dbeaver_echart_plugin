@@ -99,7 +99,7 @@
   function axisStyle(theme, includeGrid = false) {
     const axis = {
       axisLine: { lineStyle: { color: theme.muted } },
-      axisLabel: { color: theme.muted },
+      axisLabel: { color: theme.muted, hideOverlap: true },
       nameTextStyle: { color: theme.muted }
     };
     if (includeGrid) axis.splitLine = { lineStyle: { color: theme.grid } };
@@ -139,7 +139,8 @@
     const axisNames = { left: [], right: [] };
     for (const index of yIndices) axisNames[yAxes[index] === 'right' ? 'right' : 'left'].push(columns[index].name);
 
-    option.grid = { left: 62, right: axisNames.right.length ? 62 : 28, top: 70, bottom: 64, containLabel: true };
+    // Keep the axis names below the title/legend band, including dual axes.
+    option.grid = { left: 62, right: axisNames.right.length ? 62 : 28, top: 96, bottom: 64, containLabel: true };
     option.xAxis = useTimeAxis
       ? { type: 'time', name: xColumn.name, nameLocation: 'middle', nameGap: 34, ...axisStyle(theme) }
       : useCategoryAxis

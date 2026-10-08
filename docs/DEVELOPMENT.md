@@ -89,9 +89,14 @@ node scripts/test-plugin-registry.js --pde-output
 ```
 
 Esta variante detecta clases faltantes y las clases con errores generadas por
-Eclipse; después verifica los registros del plugin en una instancia Equinox
+Eclipse y bytecode que requiere una versión posterior a Java 21; después verifica los registros del plugin en una instancia Equinox
 aislada. La variante sin `--pde-output` compila los fuentes en un directorio de
 pruebas independiente.
+
+El proyecto fija su compilador en `.settings/org.eclipse.jdt.core.prefs` para
+Java 21. Esto evita heredar un compilador Java 26 del workspace aunque la
+ejecución local de DBeaver use Java 26. Refresca el proyecto y vuelve a compilar
+después de cambiar esas preferencias.
 
 Un mensaje distinto, `Connection is closed` precedido por `Connection reset`,
 indica que se perdió la conexión de la base de datos. Reconecta la conexión de

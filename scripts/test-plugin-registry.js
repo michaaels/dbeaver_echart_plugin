@@ -47,8 +47,14 @@ if (pdeOutput) {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       const file = path.join(directory, entry.name);
       if (entry.isDirectory()) checkClasses(file);
-      else if (entry.name.endsWith('.class') && fs.readFileSync(file).includes(Buffer.from('Unresolved compilation problem'))) {
-        throw new Error(`PDE output contains a compilation error stub: ${path.relative(classes, file)}. Refresh and clean the project in Eclipse.`);
+      else if (entry.name.endsWith('.class')) {
+        const bytes = fs.readFileSync(file);
+        if (bytes.includes(Buffer.from('Unresolved compilation problem'))) {
+          throw new Error(`PDE output contains a compilation error stub: ${path.relative(classes, file)}. Refresh and clean the project in Eclipse.`);
+        }
+        if (bytes.readUInt16BE(6) > 65) {
+          throw new Error(`PDE output requires Java newer than 21: ${path.relative(classes, file)}. Refresh project settings and clean the project in Eclipse.`);
+        }
       }
     }
   }

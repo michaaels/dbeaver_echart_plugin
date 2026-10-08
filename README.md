@@ -50,9 +50,11 @@ Important boundaries:
 
 - Java 21
 - Apache ECharts 6.1.0
-- Verified DBeaver Community target: 26.2.0 on Windows x86_64
+- Verified compile and registry target: DBeaver Community 26.2.2 on Windows x86_64
 
 See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) before widening the supported range.
+Production release and upstream integration still have open requirements;
+see [the readiness review](docs/PRODUCTION-READINESS.md).
 
 ## Validate
 
