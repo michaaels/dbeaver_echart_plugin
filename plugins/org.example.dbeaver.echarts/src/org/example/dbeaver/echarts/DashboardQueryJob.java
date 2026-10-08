@@ -2,6 +2,9 @@ package org.example.dbeaver.echarts;
 
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Status;
+import org.eclipse.core.runtime.jobs.Job;
+import org.eclipse.core.runtime.jobs.JobGroup;
+import org.eclipse.core.runtime.OperationCanceledException;
 import org.jkiss.dbeaver.model.exec.DBCAttributeMetaData;
 import org.jkiss.dbeaver.model.exec.DBCExecutionContext;
 import org.jkiss.dbeaver.model.exec.DBCExecutionPurpose;
@@ -11,28 +14,31 @@ import org.jkiss.dbeaver.model.exec.DBCStatement;
 import org.jkiss.dbeaver.model.exec.DBCStatementType;
 import org.jkiss.dbeaver.model.runtime.AbstractJob;
 import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
+import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
-import java.util.regex.Pattern;
 
-/** Executes a bounded, read-only dashboard query on DBeaver's active execution context. */
+/** Executes a bounded dashboard query in an owned, isolated execution context. */
 final class DashboardQueryJob extends AbstractJob {
-    private static final Pattern READ_ONLY_START = Pattern.compile(
-        "(?is)^\\s*(?:--[^\\r\\n]*(?:\\r?\\n|$)|/\\*.*?\\*/\\s*)*(select|with|show|explain|describe|desc)\\b"
-    );
-    private static final Pattern MUTATING_KEYWORD = Pattern.compile(
-        "(?i)\\b(insert|update|delete|merge|drop|alter|truncate|create|grant|revoke|call|execute)\\b"
-    );
+    private static final JobGroup QUERIES = new JobGroup("ECharts dashboard queries", 4, 0) {
+        @Override
+        protected boolean shouldCancel(IStatus result, int failures, int cancellations) { return false; }
+    };
+    private enum Stop { NONE, CANCELLED, TIMEOUT }
+    private final AtomicReference<Stop> stop = new AtomicReference<>(Stop.NONE);
+    private final AtomicReference<DBCStatement> activeStatement = new AtomicReference<>();
+    private volatile Thread worker;
 
     private final java.util.function.Supplier<DBCExecutionContext> context;
     private final String sql;
     private final int maxRows;
     private final int maxCells;
+    private final int timeoutSeconds;
     private final Consumer<String> onSuccess;
     private final Consumer<Exception> onFailure;
 
@@ -41,6 +47,7 @@ final class DashboardQueryJob extends AbstractJob {
         String sql,
         int maxRows,
         int maxCells,
+        int timeoutSeconds,
         Consumer<String> onSuccess,
         Consumer<Exception> onFailure
     ) {
@@ -49,38 +56,94 @@ final class DashboardQueryJob extends AbstractJob {
         this.sql = sql;
         this.maxRows = Math.max(1, maxRows);
         this.maxCells = Math.max(1, maxCells);
+        this.timeoutSeconds = Math.max(1, Math.min(3600, timeoutSeconds));
         this.onSuccess = onSuccess;
         this.onFailure = onFailure;
         setSystem(true);
         setPriority(SHORT);
+        setJobGroup(QUERIES);
+    }
+
+    void requestCancellation() {
+        stop.compareAndSet(Stop.NONE, Stop.CANCELLED);
+        cancel();
+    }
+
+    @Override
+    protected void canceling() {
+        stop.compareAndSet(Stop.NONE, Stop.CANCELLED);
+        DBCStatement statement = activeStatement.get();
+        Thread thread = worker;
+        if (statement != null) {
+            // JDBC cancellation may block: never run it on the SWT or deadline thread.
+            Job.createSystem("Cancel ECharts widget query", (org.eclipse.core.runtime.ICoreRunnable) monitor -> {
+                if (activeStatement.get() == statement) {
+                    try { statement.cancelBlock(new VoidProgressMonitor(), thread); }
+                    catch (Exception ignored) { /* Completion/timeout reporting stays on the owning job. */ }
+                }
+            }).schedule();
+        }
     }
 
     @Override
     protected IStatus run(DBRProgressMonitor monitor) {
-        if (!isReadOnlyQuery(sql)) {
-            IllegalArgumentException error = new IllegalArgumentException("Dashboard widgets only execute read-only SQL queries.");
-            onFailure.accept(error);
-            return new Status(IStatus.ERROR, EChartsPreferences.PLUGIN_ID, error.getMessage(), error);
-        }
+        worker = Thread.currentThread();
+        Job deadline = Job.createSystem("ECharts query deadline", (org.eclipse.core.runtime.ICoreRunnable) ignored -> {
+            if (stop.compareAndSet(Stop.NONE, Stop.TIMEOUT)) cancel();
+        });
+        deadline.schedule(timeoutSeconds * 1000L);
         try {
-            String snapshot = execute(monitor);
-            if (!monitor.isCanceled()) {
-                onSuccess.accept(snapshot);
+            checkCancelled(monitor);
+            if (!isReadOnlyQuery(sql)) {
+                throw new IllegalArgumentException("Dashboard SQL must be one permitted query without write or locking operations.");
             }
-            return monitor.isCanceled() ? Status.CANCEL_STATUS : Status.OK_STATUS;
+            String snapshot = execute(monitor);
+            checkCancelled(monitor);
+            onSuccess.accept(snapshot);
+            return Status.OK_STATUS;
         } catch (Exception e) {
-            if (!monitor.isCanceled()) {
+            if (stop.get() == Stop.TIMEOUT) {
+                e = new IllegalStateException("The widget query exceeded " + timeoutSeconds + " seconds. Cancellation was requested.", e);
                 onFailure.accept(e);
+            } else if (!monitor.isCanceled() && stop.get() == Stop.NONE) {
+                onFailure.accept(e);
+            } else {
+                return Status.CANCEL_STATUS;
             }
             return new Status(IStatus.ERROR, EChartsPreferences.PLUGIN_ID, "Could not refresh dashboard widget", e);
+        } finally {
+            deadline.cancel();
+            activeStatement.set(null);
+            worker = null;
         }
+    }
+
+    private void checkCancelled(DBRProgressMonitor monitor) {
+        if (monitor.isCanceled() || stop.get() != Stop.NONE) throw new OperationCanceledException();
+    }
+
+    private DBCExecutionContext openContext(DBRProgressMonitor monitor) throws Exception {
+        DBCExecutionContext source = context.get();
+        checkCancelled(monitor);
+        if (source == null || !source.isConnected()) throw new IllegalStateException("Connect the widget data source first.");
+        if (source.getDataSource().getContainer().isForceUseSingleConnection()) {
+            throw new IllegalStateException("Dashboard queries require a separate connection. Disable single-connection mode for this data source.");
+        }
+        DBCExecutionContext isolated = source.getOwnerInstance().openIsolatedContext(monitor, "ECharts dashboard", source);
+        // Never close or use the editor context if a driver cannot provide isolation.
+        if (isolated == null || isolated == source) throw new IllegalStateException("The driver did not provide an isolated dashboard context.");
+        return isolated;
     }
 
     private String execute(DBRProgressMonitor monitor) throws Exception {
         try (
-            DBCSession session = context.get().openSession(monitor, DBCExecutionPurpose.USER, "ECharts dashboard widget");
+            DBCExecutionContext isolated = openContext(monitor);
+            DBCSession session = isolated.openSession(monitor, DBCExecutionPurpose.USER, "ECharts dashboard widget");
             DBCStatement statement = session.prepareStatement(DBCStatementType.QUERY, sql, false, false, false)
         ) {
+            activeStatement.set(statement);
+            checkCancelled(monitor);
+            statement.setStatementTimeout(timeoutSeconds);
             statement.setLimit(0, maxRows);
             statement.setResultsFetchSize(Math.min(maxRows, 1_000));
             if (!statement.executeStatement()) {
@@ -89,6 +152,7 @@ final class DashboardQueryJob extends AbstractJob {
             try (DBCResultSet resultSet = statement.openResultSet()) {
                 List<? extends DBCAttributeMetaData> attributes = resultSet.getMeta().getAttributes();
                 int columnCount = attributes.size();
+                if (columnCount > maxCells) throw new IllegalStateException("The query column count exceeds the dashboard cell limit.");
                 int effectiveMaxRows = Math.min(maxRows, Math.max(1, maxCells / Math.max(1, columnCount)));
                 List<List<Object>> rows = new ArrayList<>();
                 while (rows.size() < effectiveMaxRows && !monitor.isCanceled() && resultSet.nextRow()) {
@@ -136,14 +200,6 @@ final class DashboardQueryJob extends AbstractJob {
     }
 
     static boolean isReadOnlyQuery(String query) {
-        if (query == null || query.isBlank() || query.length() > 1_000_000) {
-            return false;
-        }
-        String normalized = query.trim().toLowerCase(Locale.ROOT);
-        int semicolon = normalized.indexOf(';');
-        if (semicolon >= 0 && !normalized.substring(semicolon + 1).isBlank()) {
-            return false;
-        }
-        return READ_ONLY_START.matcher(query).find() && !MUTATING_KEYWORD.matcher(query).find();
+        return DashboardSqlPolicy.accepts(query);
     }
 }

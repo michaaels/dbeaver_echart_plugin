@@ -36,7 +36,7 @@ final class DashboardConnections {
         DBPProject project = projectName.isBlank() ? fallbackProject
             : DBWorkbench.getPlatform().getWorkspace().getProject(projectName);
         if (project == null || !project.isOpen()) {
-            throw new IllegalStateException("Dashboard project is unavailable. Choose a connection in Source.");
+            throw new IllegalStateException("Dashboard project is unavailable. Choose a connection in Edit.");
         }
         String id = DashboardFiles.string(source, "connectionId");
         DBPDataSourceContainer connection = id.isBlank() ? null : project.getDataSourceRegistry().getDataSource(id);
@@ -48,7 +48,7 @@ final class DashboardConnections {
             if (candidates.size() == 1) connection = candidates.getFirst();
         }
         if (connection == null) {
-            throw new IllegalStateException("Dashboard connection not found. Choose a connection in Source.");
+            throw new IllegalStateException("Dashboard connection not found. Choose a connection in Edit.");
         }
         if (!connection.isConnected() || connection.getDataSource() == null) {
             throw new IllegalStateException("Connect \"" + connection.getName() + "\" in DBeaver, then Refresh this widget.");
