@@ -44,6 +44,21 @@ También volvió a pasar la prueba de movimiento, tamaño y reapertura del dashb
 Queda probar nombres extensos, muchas series, tamaños mínimos de widget,
 escalado de pantalla de 125/150/200 %, otros idiomas y las plataformas SWT.
 
+## Edición de widgets en el dashboard
+
+El editor independiente ya permite añadir widgets con SQL/conexión propios,
+ejecutar una vista previa y seleccionar tipo, columnas, series y ejes. **Edit**
+reemplaza el editor desplegable que podía quedar fuera del área visible del widget.
+Los borradores están separados del modelo guardado y sobreviven a refrescos;
+Apply reutiliza los datos de la vista previa y Cancel/Escape los descarta.
+Los mensajes de carga/error tampoco cubren ahora los botones de la cabecera.
+
+Las pruebas DOM y Edge comprueban creación sin resultado activo, consultas
+independientes, cambio de conexión/tipo, columnas inferidas, doble eje, gauge de
+una columna, cancelación de preview, conservación de borradores y guardado/reapertura.
+Al validar la vista previa se corrigió también la escala de barras para incluir
+el cero; así el valor positivo más pequeño no desaparece en el límite del eje.
+
 ## Antes de una versión de producción
 
 | Prioridad | Pendiente y evidencia | Criterio de cierre |
