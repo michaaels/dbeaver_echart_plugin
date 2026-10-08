@@ -23,11 +23,11 @@ function page() {
     option.value = value;
     return option;
   }
-  const options = [], queries = [], saves = [], exports = [], configurations = [], timers = new Map();
-  let timerId = 0, dirtySignals = 0;
+  const options = [], queries = [], saves = [], exports = [], configurations = [], cancellations = [], intervals = [], timers = new Map();
+  let timerId = 0, dirtySignals = 0, now = Date.now();
   window.setTimeout = callback => { timers.set(++timerId, callback); return timerId; };
   window.clearTimeout = id => timers.delete(id);
-  window.setInterval = () => 0;
+  window.setInterval = callback => { intervals.push(callback); return intervals.length; };
   window.clearInterval = () => {};
   window.echarts = {
     init() { return { setOption(option) { options.push(option); }, dispose() {}, clear() {}, resize() {}, on() {} }; }
@@ -37,21 +37,25 @@ function page() {
     { project: 'Other', connection: 'Maps', connectionId: 'map-id' }
   ]);
   window.dbeaverExecuteWidgetQuery = (id, sql, source) => { queries.push({ id, sql, source: JSON.parse(source) }); return true; };
+  window.dbeaverApproveWidgetQueries = () => true;
+  window.dbeaverCancelWidgetQuery = id => { cancellations.push(id); return true; };
+  window.dbeaverResetDashboardQueries = () => true;
   window.dbeaverSaveDashboard = json => { saves.push(JSON.parse(json)); return 'Dashboards/ECharts/control.echarts-dashboard.json'; };
   window.dbeaverExportDashboard = json => { exports.push(JSON.parse(json)); return true; };
   window.dbeaverSaveConfiguration = json => { configurations.push(JSON.parse(json)); return true; };
   window.dbeaverBrowserReady = () => true;
   window.dbeaverDashboardChanged = () => { dirtySignals++; return true; };
   window.dbeaverRefreshResult = () => { throw new Error('A saved dashboard must use widget SQL'); };
-  const sandbox = { window, document, Option, console, Date, Map, Set };
+  const sandbox = { window, document, Option, console, Date: { now: () => now }, Map, Set };
   vm.createContext(sandbox);
   for (const file of ['analytics.js', 'dashboard-layout.js', 'dashboard.js', 'chart.js']) {
     vm.runInContext(fs.readFileSync(web + 'js/' + file, 'utf8'), sandbox);
   }
   window.dispatchEvent(new window.Event('DOMContentLoaded'));
-  return { window, document, api: window.DBeaverECharts, options, queries, saves, exports, configurations,
+  return { window, document, api: window.DBeaverECharts, options, queries, saves, exports, configurations, cancellations,
     get dirtySignals() { return dirtySignals; },
     flush() { for (const [id, callback] of [...timers]) { timers.delete(id); callback(); } },
+    advance(milliseconds) { now += milliseconds; for (const callback of [...intervals]) callback(); },
     click(id) { document.getElementById(id).dispatchEvent(new window.Event('click')); },
     change(element, value) { element.value = value; element.dispatchEvent(new window.Event('change')); }
   };
@@ -83,7 +87,14 @@ assert.deepEqual(author.exports[0], saved, 'Export and Save use the same portabl
 
 const reader = page();
 reader.api.loadDashboard(saved, true);
-assert.equal(reader.queries.length, 2, 'Opening without an active result queries every saved widget');
+assert.equal(reader.queries.length, 0, 'Opening a saved dashboard must wait for SQL review');
+reader.click('reviewDashboardSql');
+assert.equal(reader.document.querySelectorAll('#queryReviewSources pre').length, 2);
+reader.click('cancelQueryReview');
+assert.equal(reader.queries.length, 0, 'Cancelling review does not execute SQL');
+reader.click('refreshDashboard');
+reader.click('runReviewedQueries');
+assert.equal(reader.queries.length, 2, 'Explicit review runs every saved widget');
 assert.deepEqual(reader.queries.map(query => query.sql), [sqlA, sqlB]);
 assert.equal(reader.queries[0].source.connectionId, 'test-id');
 assert.equal(reader.document.getElementById('addWidget').disabled, true);
@@ -97,6 +108,8 @@ const changedSql = "SELECT fecha, ventas, costos FROM ciudad WHERE nombre = 'Cue
 sourceEditor.querySelector('textarea').value = changedSql;
 reader.change(sourceEditor.querySelector('select'), '1');
 sourceEditor.querySelector('button').dispatchEvent(new reader.window.Event('click'));
+assert.equal(reader.queries.length, 2, 'Changing SQL and connection invalidates approval');
+reader.click('runReviewedQueries');
 assert.equal(reader.queries.at(-1).sql, changedSql);
 assert.equal(reader.queries.at(-1).source.project, 'Other');
 assert.equal(reader.queries.at(-1).source.connectionId, 'map-id');
@@ -129,7 +142,9 @@ function pointer(page, element, type, x, y, extra = {}) {
 }
 const arrange = page();
 arrange.api.loadDashboard(saved, true);
-saved.widgets.forEach(widget => arrange.api.setWidgetSnapshot(widget.id, snapshot(widget.source.sql)));
+arrange.click('reviewDashboardSql');
+arrange.click('runReviewedQueries');
+arrange.api.setWidgetSnapshot(saved.widgets[0].id, snapshot(sqlA));
 const grid = arrange.document.getElementById('dashboardGrid');
 const pitch = (1100 - 8) / 12;
 const first = () => [...grid.querySelectorAll('.dashboard-widget')].find(element => element.dataset.widgetId === saved.widgets[0].id);
@@ -178,5 +193,58 @@ const restored = page();
 restored.api.loadDashboard(layoutFile, true);
 assert.deepEqual(JSON.parse(JSON.stringify(restored.api.dashboardDocument())), layoutFile);
 assert.equal(arrange.queries.length, 2, 'Changing placement never reruns SQL');
+
+const stopped = page();
+const periodic = JSON.parse(JSON.stringify(saved));
+periodic.widgets.forEach(widget => { widget.refreshPolicy = { mode: 'interval', intervalSeconds: 30 }; });
+stopped.api.loadDashboard(periodic, true);
+stopped.advance(60_000);
+assert.equal(stopped.queries.length, 0, 'Intervals cannot execute unreviewed SQL');
+stopped.click('reviewDashboardSql');
+stopped.click('runReviewedQueries');
+assert.equal(stopped.queries.length, 2);
+assert.ok(stopped.document.querySelector('.widget-footer').textContent.includes('Stop'));
+stopped.click('stopDashboard');
+stopped.advance(60_000);
+assert.equal(stopped.queries.length, 2, 'Stop pauses periodic execution');
+assert.deepEqual(stopped.cancellations, saved.widgets.map(widget => widget.id));
+assert.equal(stopped.document.getElementById('status').textContent, 'Queries paused');
+const renderedBeforeLateResult = stopped.options.length;
+stopped.api.setWidgetSnapshot(saved.widgets[0].id, snapshot(sqlA));
+stopped.api.setWidgetError(saved.widgets[1].id, 'Late error');
+assert.equal(stopped.options.length, renderedBeforeLateResult, 'Stopped results cannot redraw charts');
+assert.ok(stopped.document.getElementById('dashboardGrid').textContent.includes('Stopped.'));
+stopped.click('refreshDashboard');
+assert.equal(stopped.queries.length, 4, 'Explicit refresh resumes approved queries');
+stopped.api.setWidgetError(saved.widgets[0].id, 'Query timed out');
+stopped.api.setWidgetSnapshot(saved.widgets[1].id, snapshot(sqlB));
+stopped.advance(60_000);
+assert.equal(stopped.queries.length, 5, 'Failed queries stay paused; healthy intervals continue');
+assert.equal(stopped.queries.at(-1).id, saved.widgets[1].id);
+const queryCountBeforeReopen = stopped.queries.length;
+stopped.api.loadDashboard(saved, true);
+assert.equal(stopped.queries.length, queryCountBeforeReopen, 'Reopening requires new approval');
+assert.match(stopped.document.getElementById('status').textContent, /awaiting SQL review/);
+
+const removed = page();
+removed.api.loadDashboard(saved, true);
+removed.click('reviewDashboardSql');
+removed.click('runReviewedQueries');
+removed.document.querySelector('.widget-header button[title="Remove widget"]').dispatchEvent(new removed.window.Event('click'));
+assert.deepEqual(removed.cancellations, [saved.widgets[0].id], 'Removing a widget cancels its job');
+removed.api.setWidgetSnapshot(saved.widgets[0].id, snapshot(sqlA));
+assert.equal(removed.api.dashboardDocument().widgets.length, 1);
+
+const hostile = page();
+const imported = JSON.parse(JSON.stringify(saved));
+imported.widgets[0].source.sql = "SELECT '<img src=x onerror=alert(1)>' AS ventas";
+imported.widgets[0].source.approved = true;
+imported.queryApprovals = { [saved.widgets[0].id]: true };
+hostile.api.loadDashboard(imported, true);
+assert.equal(hostile.queries.length, 0, 'Approval flags from files have no authority');
+hostile.click('reviewDashboardSql');
+assert.equal(hostile.document.querySelector('#queryReviewSources pre').textContent, imported.widgets[0].source.sql);
+assert.equal(hostile.document.querySelector('#queryReviewSources img'), null, 'Review renders SQL as text');
 console.log('Dashboard bridge tests OK: SQL capture, Save/Export, standalone load, rendering, rebinding, refresh, missing SQL');
 console.log('Dashboard pointer tests OK: move, resize, Escape/cancel, async refresh, keyboard, Save/reopen, unchanged SQL');
+console.log('Dashboard execution tests OK: review/cancel, approval invalidation, stop/resume, late results, widget removal, untrusted flags and SQL text');

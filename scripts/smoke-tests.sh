@@ -6,6 +6,7 @@ cd "$ROOT"
 
 python - "${DBEAVER_PLUGINS:-}" <<'PY'
 import re
+import os
 import shutil
 import subprocess
 import sys
@@ -88,6 +89,12 @@ if plugins:
                 [javac, '-encoding', 'UTF-8', '-source', '21', '-target', '21', '-cp', str(plugins / '*'), '-d', output, *sources],
                 check=True,
             )
+            classpath = os.pathsep.join((output, str(plugins / '*')))
+            tests = ['DashboardFilesTest', 'DashboardQueryControlsTest']
+            subprocess.run([javac, '-encoding', 'UTF-8', '-source', '21', '-target', '21', '-cp', classpath,
+                            '-d', output, *[f'scripts/tests/{test}.java' for test in tests]], check=True)
+            for test in tests:
+                subprocess.run(['java', '-cp', classpath, f'org.example.dbeaver.echarts.{test}'], check=True)
         print('Java source compatibility OK: supplied DBeaver target')
     else:
         print('SKIP: javac is not installed; target source compile was not run')

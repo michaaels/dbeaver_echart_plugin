@@ -29,6 +29,10 @@
     setTimeout(() => window.DBeaverECharts.setWidgetError(widgetId, 'La vista previa usa datos de ejemplo. Prueba las consultas SQL dentro de DBeaver.'), 0);
     return true;
   };
+  // Preview approvals never grant access to a database; query execution reports sample-only mode.
+  window.dbeaverApproveWidgetQueries = () => true;
+  window.dbeaverCancelWidgetQuery = () => true;
+  window.dbeaverResetDashboardQueries = () => true;
   window.dbeaverExportDashboard = json => {
     const url = URL.createObjectURL(new Blob([json], {type:'application/json'}));
     const link = document.createElement('a');

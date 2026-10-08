@@ -24,6 +24,9 @@ async function main() {
       window.dbeaverSaveConfiguration = () => true;
       window.dbeaverDashboardChanged = () => { window.testDirty++; return true; };
       window.dbeaverListConnections = () => '[]';
+      window.dbeaverApproveWidgetQueries = () => true;
+      window.dbeaverResetDashboardQueries = () => true;
+      window.dbeaverCancelWidgetQuery = () => true;
       window.dbeaverExecuteWidgetQuery = (id, sql) => {
         window.testQueries.push({ id, sql });
         const data = datasets[id.includes('mapa') ? 8 : 0];
@@ -36,6 +39,17 @@ async function main() {
       window.dbeaverBrowserReady = () => { window.DBeaverECharts.loadDashboard(fixture, true); return true; };
     }, { fixture, datasets });
     await page.goto(pathToFileURL(path.join(root, 'plugins/org.example.dbeaver.echarts/web/index.html')).href);
+    assert.equal(await page.evaluate(() => window.testQueries.length), 0, 'Opening a dashboard must not execute SQL');
+    await page.locator('#reviewDashboardSql').click();
+    assert.equal(await page.locator('#queryReviewSources pre').count(), 3);
+    assert.equal(await page.locator('#queryReviewSources pre').first().textContent(), fixture.widgets[0].source.sql);
+    const reviewScreenshot = path.join(root, '.dev/screenshots/dashboard-query-review.png');
+    fs.mkdirSync(path.dirname(reviewScreenshot), { recursive: true });
+    await page.screenshot({ path: reviewScreenshot });
+    await page.keyboard.press('Escape');
+    assert.equal(await page.evaluate(() => window.testQueries.length), 0, 'Cancelling review must not execute SQL');
+    await page.locator('#refreshDashboard').click();
+    await page.locator('#runReviewedQueries').click();
     await page.waitForFunction(() => document.querySelectorAll('.widget-chart canvas').length === 3);
     const first = page.locator('[data-widget-id="ventas-diarias-linea"]');
     const layout = () => page.evaluate(() => window.DBeaverECharts.dashboardDocument().widgets[0].layout);
@@ -83,6 +97,9 @@ async function main() {
     assert.equal(await page.evaluate(() => window.testQueries.length), queryCount);
     assert.ok(await page.evaluate(() => window.testDirty > 0));
     await page.evaluate(saved => window.DBeaverECharts.loadDashboard(saved, true), saved);
+    assert.equal(await page.evaluate(() => window.testQueries.length), queryCount, 'Reopening clears approvals');
+    await page.locator('#reviewDashboardSql').click();
+    await page.locator('#runReviewedQueries').click();
     await page.waitForFunction(() => document.querySelectorAll('.widget-chart canvas').length === 3);
     assert.deepEqual(await layout(), resized);
     await page.evaluate(() => window.DBeaverECharts.setTheme({

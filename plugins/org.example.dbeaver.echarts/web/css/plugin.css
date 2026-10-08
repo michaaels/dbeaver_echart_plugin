@@ -271,3 +271,19 @@ button, select, input { font: inherit; }
   background: var(--control-bg);
   color: var(--fg);
 }
+/* Query review uses text nodes for SQL and connection references from dashboard files. */
+.query-review {
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  width: min(850px, 90vw);
+  max-height: 80vh;
+  overflow: auto;
+  padding: 20px;
+}
+.query-review::backdrop { background: rgb(0 0 0 / 45%); }
+.query-review section { border-top: 1px solid var(--border); padding: 12px 0; }
+.query-review h3 { margin: 0 0 8px; }
+.query-review pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; }
+.query-review-actions { display: flex; gap: 8px; justify-content: flex-end; }

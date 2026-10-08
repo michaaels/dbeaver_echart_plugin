@@ -40,6 +40,11 @@ public final class EChartsPreferencePage extends FieldEditorPreferencePage imple
         maxCells.setValidRange(EChartsPreferences.MIN_MAX_CELLS, EChartsPreferences.MAX_MAX_CELLS);
         addField(maxCells);
 
+        IntegerFieldEditor timeout = new IntegerFieldEditor(EChartsPreferences.QUERY_TIMEOUT_SECONDS,
+            "Dashboard query timeout (seconds):", getFieldEditorParent());
+        timeout.setValidRange(1, 3600);
+        addField(timeout);
+
         addField(new ComboFieldEditor(
             EChartsPreferences.DEFAULT_RENDERER,
             "Default renderer:",

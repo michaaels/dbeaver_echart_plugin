@@ -12,6 +12,8 @@ final class EChartsPreferences {
     static final String MAX_ROWS = "maxRows";
     static final String MAX_CELLS = "maxCells";
     static final String DEFAULT_RENDERER = "defaultRenderer";
+    static final String QUERY_TIMEOUT_SECONDS = "queryTimeoutSeconds";
+    static final int DEFAULT_QUERY_TIMEOUT_SECONDS = 30;
 
     static final int DEFAULT_MAX_ROWS = 50_000;
     static final int DEFAULT_MAX_CELLS = 1_000_000;
@@ -42,9 +44,14 @@ final class EChartsPreferences {
         return RENDERER_SVG.equals(renderer) ? RENDERER_SVG : RENDERER_CANVAS;
     }
 
+    static int getQueryTimeoutSeconds() {
+        return bounded(node().getInt(QUERY_TIMEOUT_SECONDS, DEFAULT_QUERY_TIMEOUT_SECONDS), 1, 3600);
+    }
+
     static void initializeDefaults(IPreferenceStore store) {
         store.setDefault(MAX_ROWS, DEFAULT_MAX_ROWS);
         store.setDefault(MAX_CELLS, DEFAULT_MAX_CELLS);
+        store.setDefault(QUERY_TIMEOUT_SECONDS, DEFAULT_QUERY_TIMEOUT_SECONDS);
         store.setDefault(DEFAULT_RENDERER, RENDERER_CANVAS);
     }
 

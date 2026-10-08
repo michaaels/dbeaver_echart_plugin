@@ -69,6 +69,8 @@
         <button id="saveDashboard" type="button">Save dashboard</button>
         <button id="openDashboard" type="button">Open dashboard</button>
         <button id="refreshDashboard" type="button">Refresh all</button>
+        <button id="reviewDashboardSql" type="button">Review SQL</button>
+        <button id="stopDashboard" type="button" disabled>Stop queries</button>
       </div>
       <span id="status" role="status"></span>
     </section>
@@ -86,6 +88,16 @@
     </section>
 
   </main>
+
+  <dialog id="queryReview" class="query-review" aria-labelledby="queryReviewTitle">
+    <h2 id="queryReviewTitle">Review dashboard queries</h2>
+    <p>These queries will run on the connections shown below. Review them before running this dashboard. Approval lasts until you close the dashboard or change its SQL or connection.</p>
+    <div id="queryReviewSources"></div>
+    <div class="query-review-actions">
+      <button id="runReviewedQueries" type="button">Run queries</button>
+      <button id="cancelQueryReview" type="button">Cancel</button>
+    </div>
+  </dialog>
 
   <script src="js/echarts.min.js"></script>
   <script src="js/world-map.js"></script>

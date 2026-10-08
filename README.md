@@ -1,6 +1,7 @@
 # DBeaver ECharts Presentation — 0.5.0
 
-A read-only DBeaver Community ResultSet presentation backed by Apache ECharts.
+An independent DBeaver Community plugin for result charts and saved dashboards,
+backed by Apache ECharts.
 The codebase is organized as a normal Eclipse PDE plugin and keeps DBeaver APIs,
 data conversion, chart construction and dashboards in separate modules.
 
@@ -16,6 +17,7 @@ data conversion, chart construction and dashboards in separate modules.
 - Manual, result-driven and interval refresh policies.
 - Shared filters, cross-filter events and drill-down.
 - Dashboard JSON import/export.
+- Session SQL review, isolated query contexts, configurable timeout and Stop controls.
 - Preferences, background snapshots, copy/export integration and compatibility smoke tests.
 
 The browser frontend is fully local. It has no CDN, telemetry or runtime network dependency.
@@ -41,7 +43,8 @@ EChartsPresentation (SWT Browser bridge, UI-thread boundary)
 Important boundaries:
 
 - `DBeaverResultSetAdapter` is the ResultSet-to-DTO boundary.
-- `DashboardQueryJob` executes one validated, read-only widget query.
+- `DashboardQueryJob` executes one approved, conservatively validated widget query in an isolated context.
+- `DashboardQueryApproval` binds session approval to the SQL and connection reference.
 - `EChartsPresentation` owns SWT lifecycle and marshals browser calls to the UI thread.
 - `analytics.js` contains pure chart-option builders.
 - `dashboard.js` owns the versioned dashboard model and view rendering.
@@ -53,7 +56,7 @@ Important boundaries:
 - Verified compile and registry target: DBeaver Community 26.2.2 on Windows x86_64
 
 See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) before widening the supported range.
-Production release and upstream integration still have open requirements;
+Production release as an independent plugin still has open requirements;
 see [the readiness review](docs/PRODUCTION-READINESS.md).
 
 ## Validate

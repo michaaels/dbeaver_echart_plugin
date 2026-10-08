@@ -23,7 +23,9 @@ El mismo formato incluye los mapas y sus columnas de longitud, latitud y valor.
 5. Usa **Open dashboard** para abrir el JSON en su propio editor. Los JSON con
    el marcador de ECharts también tienen un editor y un manejador registrados
    para el navegador de ficheros de DBeaver. La conexión debe estar conectada;
-   **Refresh all** vuelve a ejecutar las consultas de los widgets.
+   el archivo se abre con sus consultas detenidas. Pulsa **Review SQL**, revisa
+   las consultas y conexiones, y usa **Run queries**. **Refresh all** pide esa
+   misma revisión si alguna fuente aún no tiene aprobación.
 6. En ese editor, **Save dashboard** o **Ctrl+S** actualiza ambos archivos.
    Los cambios pendientes aparecen como modificaciones del editor.
 
@@ -38,6 +40,28 @@ actualización periódica. Un widget sin SQL no puede guardarse como dashboard
 reutilizable: asigna su consulta desde **Source**. El SQL se conserva como texto;
 las consultas con parámetros del editor SQL deben llevar valores concretos para
 que el trabajo del dashboard pueda ejecutarlas.
+
+## Revisar y detener consultas
+
+La aprobación dura solamente durante la sesión de ese dashboard. Reabrir/importar
+un archivo o cambiar su SQL/conexión obliga a revisar la fuente de nuevo. No se
+guardan marcas de confianza en JSON ni en la copia SQL. Mover, redimensionar,
+renombrar o filtrar un widget conserva la aprobación de su fuente.
+
+**Stop queries** solicita la cancelación de las consultas y pausa los intervalos;
+el botón **Stop** de un widget permite hacerlo individualmente. **Refresh** o
+**Refresh all** reanuda consultas aprobadas. Un error o timeout pausa la consulta
+afectada hasta que la actualices explícitamente.
+
+En **Window > Preferences > ECharts**, el timeout predeterminado es 30 segundos,
+con rango de 1 a 3600. Se ejecutan como máximo cuatro consultas simultáneas y
+cada una abre su propio contexto, separado de las transacciones del editor SQL.
+Las conexiones configuradas para usar una única sesión no pueden ejecutar estas
+consultas independientes. El soporte de cancelación/timeout depende del driver.
+
+El filtro SQL descarta lotes, operaciones de escritura/bloqueo y ciertas funciones
+con efectos secundarios; no garantiza que toda función `SELECT` sea inocua.
+Usa permisos de lectura en la base de datos para dashboards de control.
 
 ## Mover y redimensionar widgets
 

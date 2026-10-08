@@ -34,6 +34,9 @@
     widgetErrors: new Map(),
     widgetRequests: new Set(),
     widgetRefreshTimes: new Map(),
+    queryApprovals: new Map(),
+    sourceBindings: new Map(),
+    pausedWidgets: new Set(),
     configurationLoaded: false,
     theme: DEFAULT_THEME
   };
@@ -44,6 +47,7 @@
   let lastChartHeight = 0;
   let configurationSaveTimer = null;
   let lastDashboardRefresh = 0;
+  let pendingReview = [];
 
   function $(id) { return document.getElementById(id); }
 
@@ -64,6 +68,12 @@
       saveDashboard: $('saveDashboard'),
       openDashboard: $('openDashboard'),
       refreshDashboard: $('refreshDashboard'),
+      reviewDashboardSql: $('reviewDashboardSql'),
+      stopDashboard: $('stopDashboard'),
+      queryReview: $('queryReview'),
+      queryReviewSources: $('queryReviewSources'),
+      runReviewedQueries: $('runReviewedQueries'),
+      cancelQueryReview: $('cancelQueryReview'),
       dashboardTitle: $('dashboardTitle'),
       empty: $('empty'),
       status: $('status'),
@@ -93,6 +103,11 @@
     els.saveDashboard.addEventListener('click', saveDashboard);
     els.openDashboard.addEventListener('click', () => window.dbeaverOpenDashboard?.());
     els.refreshDashboard.addEventListener('click', refreshDashboard);
+    els.reviewDashboardSql.addEventListener('click', () => reviewQueries(state.dashboard.widgets));
+    els.stopDashboard.addEventListener('click', stopDashboardQueries);
+    els.runReviewedQueries.addEventListener('click', runReviewedQueries);
+    els.cancelQueryReview.addEventListener('click', closeQueryReview);
+    els.queryReview.addEventListener('cancel', closeQueryReview);
     els.dashboardTitle.addEventListener('input', () => {
       state.dashboard.title = els.dashboardTitle.value;
       schedulePersistConfiguration();
@@ -192,6 +207,7 @@
 
   function setConfiguration(configuration) {
     if (!configuration || configuration.schemaVersion !== 1) return;
+    resetDashboardQueries();
     if (CHART_TYPES.has(configuration.chartType)) {
       state.chartType = configuration.chartType;
       els.chartType.value = state.chartType;
@@ -246,6 +262,7 @@
   }
 
   function clearConfiguration() {
+    resetDashboardQueries();
     state.configurationLoaded = false;
     state.chartType = 'line';
     state.renderer = 'canvas';
@@ -462,6 +479,7 @@
   }
 
   function renderDashboard() {
+    reconcileQuerySources();
     els.dashboardTitle.value = state.dashboard.title;
     disposeChart();
     window.DBeaverEChartsDashboard.render({
@@ -479,9 +497,11 @@
       onRefresh: widget => {
         requestWidgetRefresh(widget);
         renderDashboard();
-      }
+      },
+      onCancel: widget => { stopWidgetQuery(widget); renderDashboard(); }
     });
     requestMissingWidgetSnapshots();
+    updateDashboardStatus();
   }
 
   function addDashboardWidget() {
@@ -522,17 +542,129 @@
     };
   }
 
-  function requestWidgetRefresh(widget) {
+  function sourceSignature(widget) {
+    const source = widget.source;
+    return JSON.stringify([source.sql, source.kind, source.project || '', source.connectionId || '', source.connection || '']);
+  }
+
+  function isApproved(widget) { return state.queryApprovals.get(widget.id) === sourceSignature(widget); }
+
+  function closeQueryReview() {
+    pendingReview = [];
+    if (typeof els.queryReview.close === 'function') els.queryReview.close();
+    else els.queryReview.removeAttribute('open');
+  }
+
+  function reviewQueries(widgets) {
+    const queries = widgets.filter(widget => widget.source.kind === 'savedQuery' && widget.source.sql);
+    if (!queries.length) return;
+    closeQueryReview();
+    pendingReview = queries.map(widget => ({ id: widget.id, signature: sourceSignature(widget) }));
+    els.queryReviewSources.replaceChildren();
+    for (const widget of queries) {
+      const section = document.createElement('section');
+      const title = document.createElement('h3');
+      title.textContent = widget.title;
+      const connection = document.createElement('div');
+      connection.textContent = `${widget.source.project || 'Dashboard project'} / ${widget.source.connection || 'Choose a connection in Source'} (${widget.source.connectionId || 'legacy name reference'})`;
+      const sql = document.createElement('pre');
+      sql.textContent = widget.source.sql;
+      section.append(title, connection, sql);
+      els.queryReviewSources.appendChild(section);
+    }
+    if (typeof els.queryReview.showModal === 'function') els.queryReview.showModal();
+    else els.queryReview.setAttribute('open', '');
+  }
+
+  function runReviewedQueries() {
+    const queries = pendingReview.map(entry => state.dashboard.widgets.find(widget => widget.id === entry.id));
+    if (!queries.length || queries.some((widget, index) => !widget || sourceSignature(widget) !== pendingReview[index].signature)) {
+      closeQueryReview();
+      els.status.textContent = 'The query source changed. Review the SQL again.';
+      return;
+    }
+    const approved = window.dbeaverApproveWidgetQueries?.(JSON.stringify(queries.map(widget => ({
+      id: widget.id, sql: widget.source.sql, source: widget.source
+    }))));
+    if (approved !== true) {
+      els.status.textContent = 'DBeaver could not approve these queries.';
+      return;
+    }
+    for (const widget of queries) state.queryApprovals.set(widget.id, sourceSignature(widget));
+    closeQueryReview();
+    for (const widget of queries) requestWidgetRefresh(widget);
+    renderDashboard();
+  }
+
+  function stopWidgetQuery(widget) {
+    window.dbeaverCancelWidgetQuery?.(widget.id);
+    state.widgetRequests.delete(widget.id);
+    state.pausedWidgets.add(widget.id);
+    state.widgetErrors.set(widget.id, 'Stopped. Refresh to run again.');
+  }
+
+  function stopDashboardQueries() {
+    for (const widget of state.dashboard.widgets) {
+      state.pausedWidgets.add(widget.id);
+      if (state.widgetRequests.has(widget.id)) stopWidgetQuery(widget);
+    }
+    renderDashboard();
+  }
+
+  function resetDashboardQueries() {
+    window.dbeaverResetDashboardQueries?.();
+    state.queryApprovals.clear();
+    state.sourceBindings.clear();
+    state.pausedWidgets.clear();
+    state.widgetRefreshTimes.clear();
+    closeQueryReview();
+  }
+
+  function reconcileQuerySources() {
+    const widgets = new Map(state.dashboard.widgets.map(widget => [widget.id, widget]));
+    for (const [id, binding] of state.sourceBindings) {
+      const widget = widgets.get(id);
+      if (!widget || binding !== sourceSignature(widget)) {
+        window.dbeaverCancelWidgetQuery?.(id, true);
+        state.queryApprovals.delete(id);
+        state.widgetRequests.delete(id);
+        state.widgetSnapshots.delete(id);
+        state.widgetErrors.delete(id);
+        state.pausedWidgets.delete(id);
+        state.widgetRefreshTimes.delete(id);
+        state.sourceBindings.delete(id);
+      }
+    }
+    for (const widget of widgets.values()) state.sourceBindings.set(widget.id, sourceSignature(widget));
+  }
+
+  function requestWidgetRefresh(widget, automatic = false) {
     if (widget?.source?.kind === 'savedQuery' && widget.source.sql) {
+      if (!isApproved(widget)) {
+        if (!automatic) reviewQueries([widget]);
+        return;
+      }
+      if (automatic && state.pausedWidgets.has(widget.id)) return;
+      if (state.widgetRequests.has(widget.id)) return;
+      state.pausedWidgets.delete(widget.id);
       state.widgetSnapshots.delete(widget.id);
       state.widgetErrors.delete(widget.id);
       state.widgetRequests.add(widget.id);
       state.widgetRefreshTimes.set(widget.id, Date.now());
       if (typeof window.dbeaverExecuteWidgetQuery === 'function') {
-        window.dbeaverExecuteWidgetQuery(widget.id, widget.source.sql, JSON.stringify(widget.source));
+        try {
+          if (window.dbeaverExecuteWidgetQuery(widget.id, widget.source.sql, JSON.stringify(widget.source)) !== true) {
+            throw new Error('The SQL or connection needs review before this query can run.');
+          }
+        } catch (error) {
+          state.widgetRequests.delete(widget.id);
+          state.widgetErrors.set(widget.id, error.message);
+          state.pausedWidgets.add(widget.id);
+        }
       } else {
         state.widgetRequests.delete(widget.id);
         state.widgetErrors.set(widget.id, 'The dashboard query bridge is unavailable.');
+        state.pausedWidgets.add(widget.id);
       }
       return;
     }
@@ -543,11 +675,12 @@
     for (const widget of state.dashboard.widgets) {
       if (widget.source.kind !== 'savedQuery' || !widget.source.sql) continue;
       if (state.widgetSnapshots.has(widget.id) || state.widgetErrors.has(widget.id) || state.widgetRequests.has(widget.id)) continue;
-      requestWidgetRefresh(widget);
+      requestWidgetRefresh(widget, true);
     }
   }
 
   function setWidgetSnapshot(widgetId, snapshot) {
+    if (!state.widgetRequests.has(widgetId)) return;
     try {
       validateSnapshot(snapshot);
       state.widgetRequests.delete(widgetId);
@@ -560,9 +693,11 @@
   }
 
   function setWidgetError(widgetId, message) {
+    if (!state.widgetRequests.has(widgetId)) return;
     state.widgetRequests.delete(widgetId);
     state.widgetSnapshots.delete(widgetId);
     state.widgetErrors.set(widgetId, message);
+    state.pausedWidgets.add(widgetId);
     if (state.viewMode === 'dashboard') renderDashboard();
   }
 
@@ -571,12 +706,13 @@
     const now = Date.now();
     for (const widget of state.dashboard.widgets) {
       if (widget.refreshPolicy.mode !== 'interval' || widget.refreshPolicy.intervalSeconds < 5) continue;
-      if (state.widgetRequests.has(widget.id)) continue;
+      if (state.widgetRequests.has(widget.id) || state.pausedWidgets.has(widget.id) || !isApproved(widget)) continue;
       const previous = state.widgetRefreshTimes.get(widget.id) || lastDashboardRefresh;
       if (now - previous >= widget.refreshPolicy.intervalSeconds * 1000) {
         state.widgetRefreshTimes.set(widget.id, now);
         lastDashboardRefresh = now;
-        requestWidgetRefresh(widget);
+        requestWidgetRefresh(widget, true);
+        renderDashboard();
       }
     }
   }
@@ -612,12 +748,17 @@
   function saveDashboard() { writeDashboard('dbeaverSaveDashboard'); }
 
   function refreshDashboard() {
+    if (state.dashboard.widgets.some(widget => widget.source.kind === 'savedQuery' && widget.source.sql && !isApproved(widget))) {
+      reviewQueries(state.dashboard.widgets);
+      return;
+    }
     for (const widget of state.dashboard.widgets) requestWidgetRefresh(widget);
     renderDashboard();
   }
 
   function loadDashboard(document, standalone = false) {
     const dashboard = window.DBeaverEChartsDashboard.normalizeDashboard(document);
+    resetDashboardQueries();
     state.standalone = standalone;
     documentBodyMode(standalone);
     state.dashboard = dashboard;
@@ -692,11 +833,19 @@
   }
 
   function updateStatus() {
+    if (state.viewMode === 'dashboard') { updateDashboardStatus(); return; }
     const snapshot = state.snapshot;
     if (!snapshot) return;
     els.status.textContent = snapshot.truncated
       ? `${snapshot.exportedRowCount.toLocaleString()} of ${snapshot.rowCount.toLocaleString()} rows (effective limit ${snapshot.effectiveMaxRows.toLocaleString()})`
       : `${snapshot.rowCount.toLocaleString()} rows`;
+  }
+
+  function updateDashboardStatus() {
+    const waiting = state.dashboard.widgets.filter(widget => widget.source.kind === 'savedQuery' && widget.source.sql && !isApproved(widget)).length;
+    const running = state.widgetRequests.size;
+    els.stopDashboard.disabled = !running && !state.dashboard.widgets.some(widget => widget.refreshPolicy.mode === 'interval' && isApproved(widget) && !state.pausedWidgets.has(widget.id));
+    els.status.textContent = running ? `${running} queries running` : waiting ? `${waiting} queries awaiting SQL review` : state.pausedWidgets.size ? 'Queries paused' : 'Dashboard ready';
   }
 
   function setMessage(message) {

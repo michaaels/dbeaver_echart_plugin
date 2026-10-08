@@ -146,7 +146,7 @@
       const header = buildHeader(widget, dashboard, onChange);
       const chartElement = document.createElement('div');
       chartElement.className = 'widget-chart';
-      const footer = buildFooter(widget, onChange, onRefresh);
+      const footer = buildFooter(widget, onChange, onRefresh, widgetRequests?.has(widget.id), options.onCancel);
       element.append(header, chartElement, footer);
       addLayoutControls(root, element, header, widget, dashboard, onChange);
       root.appendChild(element);
@@ -341,7 +341,7 @@
     return header;
   }
 
-  function buildFooter(widget, onChange, onRefresh) {
+  function buildFooter(widget, onChange, onRefresh, loading, onCancel) {
     const footer = document.createElement('footer');
     footer.className = 'widget-footer';
     const policy = document.createElement('select');
@@ -362,8 +362,8 @@
 
     const refresh = document.createElement('button');
     refresh.type = 'button';
-    refresh.textContent = 'Refresh';
-    refresh.addEventListener('click', () => onRefresh(widget));
+    refresh.textContent = loading ? 'Stop' : 'Refresh';
+    refresh.addEventListener('click', () => loading ? onCancel?.(widget) : onRefresh(widget));
 
     const source = document.createElement('details');
     const summary = document.createElement('summary');
@@ -428,7 +428,9 @@
     const context = buildContext(widget, dashboard, snapshot, theme);
     if (!context) {
       element.classList.add('message');
-      element.textContent = 'Run the widget source query or select compatible columns.';
+      element.textContent = widget.source.kind === 'savedQuery' && !widgetSnapshot
+        ? 'Review SQL and run the widget query to load its data.'
+        : 'Run the widget source query or select compatible columns.';
       return;
     }
     const chart = window.echarts.init(element, null, { renderer });

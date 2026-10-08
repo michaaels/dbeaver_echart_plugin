@@ -1,8 +1,34 @@
-# Revisión de producción e integración en DBeaver
+# Revisión de producción del plugin independiente
 
 Fecha de revisión: 2026-10-07. Estado: beta funcional; todavía no certificada
 para producción. Esta revisión identifica lo observado en el código y las
 pruebas disponibles; no sustituye una auditoría completa.
+
+El proyecto continuará como plugin independiente. La integración en el repositorio
+principal de DBeaver queda fuera del alcance de esta entrega.
+
+## Controles de ejecución implementados
+
+Abrir/importar un dashboard ya no ejecuta SQL. **Review SQL** muestra cada consulta
+y su conexión; **Run queries** crea una aprobación temporal ligada a la fuente,
+verificada también por Java. Cambiar SQL/conexión o reabrir el documento la invalida.
+El lexer reemplaza la regex anterior, distingue literales/comentarios y bloquea
+lotes, escrituras, bloqueos y varias funciones conocidas con efectos secundarios.
+Las funciones de usuario y diferencias entre dialectos siguen requiriendo permisos
+de lectura efectivos en la base de datos.
+
+Cada consulta abre y cierra un contexto aislado, sin usar ni cerrar la sesión del
+editor. Hay cuatro slots globales, timeout configurable de 30 segundos y cancelación
+del statement fuera del hilo UI. **Stop** pausa intervalos; los errores también
+pausan la fuente afectada. La terminación real depende del driver, especialmente
+durante conexión y lectura; no se fuerza la terminación de hilos.
+
+`DashboardQueryControlsTest` comprueba política SQL, aprobación, timeout, cancelación,
+propiedad del contexto y concurrencia con el planificador real de Eclipse. Usa
+proxies para el driver y un servicio mínimo de workbench en una JVM de pruebas,
+sin escribir en MariaDB. Las pruebas DOM y Edge comprueban revisión, reapertura,
+edición de fuentes, Stop, intervalos, callbacks tardíos y SQL mostrado como texto.
+Queda completar la certificación con drivers y SWT reales.
 
 ## Problema visual corregido
 
@@ -22,8 +48,8 @@ escalado de pantalla de 125/150/200 %, otros idiomas y las plataformas SWT.
 
 | Prioridad | Pendiente y evidencia | Criterio de cierre |
 |---|---|---|
-| P0 | **SQL y confianza al abrir archivos.** `DashboardQueryJob.isReadOnlyQuery` usa regex; `chart.js` solicita consultas guardadas al abrir el dashboard, incluso con política manual. | Revisar consultas y conexiones antes de ejecutar un archivo importado, definir confianza para documentos locales y respaldar el acceso con permisos de base de datos. Evaluar el parser y las APIs de ejecución de DBeaver, sin tratar un parser o regex como garantía de ausencia de efectos secundarios. |
-| P0 | **Tiempo, cancelación y contexto de ejecución.** El job limita filas y comprueba el monitor durante la lectura, pero no fija un timeout propio ni conserva el statement para cancelarlo. `DashboardConnections` usa el contexto predeterminado de la conexión. | Una consulta bloqueada debe detenerse; definir y probar aislamiento respecto al editor/transacciones, concurrencia por conexión, límites globales y recuperación tras desconexión. No reintentar automáticamente consultas de efectos desconocidos. |
+| P0 | **SQL y confianza: controles implementados; certificación pendiente.** Revisión explícita, aprobación en memoria ligada a SQL/conexión y lexer conservador. | Verificar los dialectos/roles admitidos con bases reales y revisión de seguridad. Documentar rechazos del lexer; no presentarlo como garantía de lectura sin efectos secundarios. |
+| P0 | **Tiempo, cancelación y aislamiento: controles implementados; drivers pendientes.** Statement timeout + deadline, cancelación asíncrona, contexto propio y cuatro jobs concurrentes. | Probar consultas bloqueadas, transacciones del editor, apertura de conexión, fetching, desconexión y cierre con drivers reales. Publicar el alcance del soporte de cancelación por driver. |
 | P0 | **Instalación y actualización.** Existen feature y definición del sitio PDE; no hay build automatizado de una entrega P2 ni CI versionada. Las pruebas actuales compilan fuentes o empaquetan un JAR de pruebas. | Build reproducible con target fijado, artefacto P2 versionado y publicable, instalación/actualización/desinstalación en un DBeaver limpio y verificación de las licencias y recursos incluidos. |
 | P0 | **Pruebas del producto.** Compilación y registros se verificaron en DBeaver 26.2.2; Edge automatizado usa un puente SQL simulado con datasets de MariaDB. | Completar la prueba SWT con consultas reales: abrir/guardar, Ctrl+S, dirty state, conexiones, refresco, cierre durante consultas, zoom, exportación y reinicio. Certificar Windows/Linux/macOS o publicar explícitamente un alcance menor. |
 | P1 | **Memoria y fluidez.** Hay límites por snapshot, pero hasta 24 widgets; cada render del dashboard destruye y crea sus gráficos. | Medir un dashboard de 24 widgets y consultas al límite; fijar presupuesto global, actualizar sólo widgets afectados y comprobar liberación de gráficos, jobs, observers y timers. |
@@ -34,13 +60,13 @@ escalado de pantalla de 125/150/200 %, otros idiomas y las plataformas SWT.
 
 ### Comprobación del filtro SQL
 
-Una prueba local llamó únicamente a `isReadOnlyQuery`, sin conectar ni ejecutar
-estos SQL. Confirmó:
+La revisión inicial llamó únicamente al filtro anterior, sin ejecutar SQL. Los
+casos detectados ahora se verifican en `DashboardQueryControlsTest`:
 
 - `SELECT 1`: aceptado.
-- `SELECT 1 INTO OUTFILE '/tmp/audit-no-execution'`: aceptado aunque puede escribir un archivo según los permisos del servidor.
-- `SELECT nextval('audit_sequence')`: aceptado aunque puede cambiar una secuencia.
-- `SELECT 'update' AS status`: rechazado aunque el texto es un literal.
+- `SELECT 1 INTO OUTFILE '/tmp/audit-no-execution'`: ahora rechazado.
+- `SELECT nextval('audit_sequence')`: ahora rechazado.
+- `SELECT 'update' AS status`: ahora aceptado como literal.
 
 El objetivo de lectura requiere tanto una política de ejecución como permisos
 efectivos. Los límites de filas no limitan el trabajo de agregaciones o funciones
@@ -55,39 +81,13 @@ posterior a 65, además de detectar clases faltantes y errores de compilación.
 Las pruebas de fuentes usan `--release 21`. La ejecución local sigue usando Java
 26; esto no certifica una ejecución completa del producto en Java 21.
 
-## Solicitar integración en el proyecto principal
-
-El primer paso es acordar el alcance con los mantenedores. La documentación
-oficial reserva los gráficos de resultados para Lite, Enterprise y Ultimate;
-la guía advierte que funciones existentes en ediciones comerciales pueden no
-aceptarse en Community. Esto plantea un riesgo de aceptación del alcance actual,
-independiente de la calidad técnica.
-
-Fuentes: [Managing Charts](https://github.com/dbeaver/dbeaver/wiki/Managing-Charts)
-y [Contribute your code](https://github.com/dbeaver/dbeaver/wiki/Contribute-your-code).
-
-Propuesta inicial: describir un renderer ECharts local para resultados y su
-formato reutilizable, explicar cómo encajaría con los dashboards existentes y
-consultar si prefieren un componente integrado o una extensión independiente.
-Los [dashboards existentes](https://github.com/dbeaver/dbeaver/wiki/Dashboards)
-también necesitan considerarse para evitar dos experiencias incompatibles.
-
-Si aceptan la propuesta, adaptar nombres y estilo, NLS, anotaciones de nulabilidad
-y cabeceras; integrar el módulo en `plugins/pom.xml` y la feature indicada por
-ellos. Su guía pide un issue previo, commits referenciándolo, pruebas dentro de
-DBeaver, capturas y declaración del uso de IA. Recomienda cambios pequeños;
-un envío masivo de código generado con IA puede rechazarse.
-
-El PR de este repositorio no es un PR contra `dbeaver/dbeaver`. No se abrió un
-issue ni se contactó a sus mantenedores durante esta revisión.
-
 ## Secuencia recomendada
 
-1. Consultar la aceptación del alcance y cerrar P0 de SQL/ejecución.
+1. Certificar los controles de ejecución con drivers reales y permisos de lectura.
 2. Construir una entrega P2 y probarla instalada en limpio.
 3. Completar pruebas SWT, rendimiento y compatibilidad del alcance elegido.
 4. Publicar una beta instalable con pendientes explícitos; certificar la versión estable después de cerrar los criterios.
-5. Preparar contribuciones acotadas al repositorio principal si los mantenedores aceptan el diseño.
+5. Evolucionar el formato y preparar un visor web separado cuando se defina su alcance.
 
 La futura apertura en web necesita su propio visor y, para consultar datos
 actualizados, un backend autenticado que gestione conexiones y permisos. Los
