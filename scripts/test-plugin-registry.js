@@ -4,12 +4,15 @@ const fs = require('node:fs');
 const path = require('node:path');
 const cp = require('node:child_process');
 const root = path.resolve(__dirname, '..');
-const home = path.resolve(process.argv[2] || path.join(root, '.dev/dbeaver-26.2.2/dbeaver'));
+const cliArgs = process.argv.slice(2);
+const pdeOutput = cliArgs.includes('--pde-output');
+const home = path.resolve(cliArgs.find(value => value !== '--pde-output') || path.join(root, '.dev/dbeaver-26.2.2/dbeaver'));
 const javaHome = process.env.ECHARTS_RUNTIME_JDK || 'C:/Program Files/Java/jdk-26.0.1';
 const java = name => path.join(javaHome, 'bin', name + '.exe');
 const output = path.join(root, '.dev/registry-test-' + Date.now());
-const classes = path.join(output, 'classes');
-fs.mkdirSync(classes, { recursive: true });
+const classes = pdeOutput ? path.join(root, 'plugins/org.example.dbeaver.echarts/bin') : path.join(output, 'classes');
+fs.mkdirSync(output, { recursive: true });
+if (!pdeOutput) fs.mkdirSync(classes);
 const plugins = path.join(home, 'plugins');
 const entries = fs.readdirSync(plugins);
 const framework = path.join(plugins, entries.find(name => /^org\.eclipse\.osgi_[\d]/.test(name)));
@@ -35,7 +38,25 @@ function run(command, args) {
 const source = path.join(root, 'plugins/org.example.dbeaver.echarts');
 const sources = fs.readdirSync(path.join(source, 'src/org/example/dbeaver/echarts'))
   .filter(name => name.endsWith('.java')).map(name => path.join(source, 'src/org/example/dbeaver/echarts', name));
-run(java('javac'), ['--release', '21', '-encoding', 'UTF-8', '-cp', path.join(plugins, '*'), '-d', classes, ...sources]);
+if (pdeOutput) {
+  for (const file of sources) {
+    const compiled = path.join(classes, 'org/example/dbeaver/echarts', path.basename(file, '.java') + '.class');
+    if (!fs.existsSync(compiled)) throw new Error(`PDE output is incomplete: ${path.basename(compiled)} is missing. Refresh and clean the project in Eclipse.`);
+  }
+  function checkClasses(directory) {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const file = path.join(directory, entry.name);
+      if (entry.isDirectory()) checkClasses(file);
+      else if (entry.name.endsWith('.class') && fs.readFileSync(file).includes(Buffer.from('Unresolved compilation problem'))) {
+        throw new Error(`PDE output contains a compilation error stub: ${path.relative(classes, file)}. Refresh and clean the project in Eclipse.`);
+      }
+    }
+  }
+  checkClasses(classes);
+  console.log('Testing actual Eclipse PDE output: ' + classes);
+} else {
+  run(java('javac'), ['--release', '21', '-encoding', 'UTF-8', '-cp', path.join(plugins, '*'), '-d', classes, ...sources]);
+}
 const pluginJar = path.join(output, 'echarts-test.jar');
 run(java('jar'), ['cfm', pluginJar, path.join(source, 'META-INF/MANIFEST.MF'), '-C', classes, '.', '-C', source, 'plugin.xml', '-C', source, 'web']);
 const harness = path.join(output, 'harness');
