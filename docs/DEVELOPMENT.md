@@ -65,6 +65,39 @@ Java encuentre las bibliotecas nativas al iniciar desde PDE.
 La plataforma usa el DBeaver descargado, mientras PDE sustituye el bundle de
 ECharts por el proyecto del workspace.
 
+Como los archivos también se modifican desde fuera de Eclipse, activa
+**Window → Preferences → General → Workspace → Refresh using native hooks or
+polling**. Eclipse debe descubrir las clases nuevas y los cambios del manifiesto
+antes de compilar. Mantén **Project → Build Automatically** activado.
+
+Si aparece `Unresolved compilation problems`, `DashboardFiles cannot be resolved`
+o `DashboardConnections cannot be resolved`, la salida `bin/` usada por PDE puede
+estar incompleta aunque la compilación de la validación haya pasado. Eclipse puede
+generar clases que lanzan ese error al construir la presentación.
+
+1. Guarda tus editores y cierra la ejecución de DBeaver de pruebas.
+2. Selecciona `org.example.dbeaver.echarts` en Eclipse y pulsa **F5 / Refresh**.
+3. Ejecuta **Project → Clean** para ese proyecto y espera a que termine el build.
+4. Revisa la vista **Problems** y corrige cualquier error antes de volver a ejecutar
+   `DBeaver-ECharts-local`. Si Eclipse avisa que hay errores, cancela el lanzamiento.
+
+Para comprobar las clases que realmente usa PDE, sin recompilarlas ni abrir otra
+ventana de DBeaver:
+
+```powershell
+node scripts/test-plugin-registry.js --pde-output
+```
+
+Esta variante detecta clases faltantes y las clases con errores generadas por
+Eclipse; después verifica los registros del plugin en una instancia Equinox
+aislada. La variante sin `--pde-output` compila los fuentes en un directorio de
+pruebas independiente.
+
+Un mensaje distinto, `Connection is closed` precedido por `Connection reset`,
+indica que se perdió la conexión de la base de datos. Reconecta la conexión de
+pruebas en DBeaver y vuelve a ejecutar el SQL; refrescar el proyecto Java no
+restablece esa conexión.
+
 Si aparece `UnsatisfiedLinkError: Could not load SWT library`, vuelve a generar
 la configuración con `configure-eclipse.ps1`, selecciona el proyecto
 `echarts-development` en Eclipse y pulsa **F5**. Abre la configuración de
