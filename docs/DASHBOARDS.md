@@ -8,7 +8,7 @@ El mismo formato incluye los mapas y sus columnas de longitud, latitud y valor.
 ## Crear, guardar y abrir
 
 1. Ejecuta un `SELECT` en DBeaver y configura el gráfico en la pestaña ECharts.
-2. Pulsa **Add widget**. El widget conserva esa consulta y el resultado ya leído.
+2. Pulsa **Add widget** y **Apply widget**. El widget conserva esa consulta y el resultado ya leído.
    Puedes ejecutar otra consulta y añadir otro widget al mismo dashboard.
 3. En **Dashboard**, escribe el título y pulsa **Save dashboard**.
 4. Elige el nombre. La carpeta propuesta es `Dashboards/ECharts` dentro del
@@ -23,21 +23,71 @@ El mismo formato incluye los mapas y sus columnas de longitud, latitud y valor.
 5. Usa **Open dashboard** para abrir el JSON en su propio editor. Los JSON con
    el marcador de ECharts también tienen un editor y un manejador registrados
    para el navegador de ficheros de DBeaver. La conexión debe estar conectada;
-   **Refresh all** vuelve a ejecutar las consultas de los widgets.
+   el archivo se abre con sus consultas detenidas. Pulsa **Review SQL**, revisa
+   las consultas y conexiones, y usa **Run queries**. **Refresh all** pide esa
+   misma revisión si alguna fuente aún no tiene aprobación.
 6. En ese editor, **Save dashboard** o **Ctrl+S** actualiza ambos archivos.
    Los cambios pendientes aparecen como modificaciones del editor.
 
 **Import** carga el documento en la vista actual; **Export** guarda el mismo
 formato en otra ubicación, también con su copia SQL. El editor independiente
-permite cambiar SQL/conexión, actualización, filtros, título y renderer. Para
-añadir nuevos gráficos, usa la presentación ECharts de un resultado SQL.
+permite añadir gráficos y cambiar SQL/conexión, tipo, columnas, series, ejes,
+actualización, filtros, título y renderer sin depender de una pestaña de resultados.
 
 Los widgets nuevos con SQL usan consultas independientes y actualización manual.
-Desde **Source** puedes cambiar el SQL y la conexión. También puedes elegir
+Desde **Edit** puedes cambiar el SQL y la conexión. También puedes elegir
 actualización periódica. Un widget sin SQL no puede guardarse como dashboard
-reutilizable: asigna su consulta desde **Source**. El SQL se conserva como texto;
+reutilizable: asigna su consulta desde **Edit**. El SQL se conserva como texto;
 las consultas con parámetros del editor SQL deben llevar valores concretos para
 que el trabajo del dashboard pueda ejecutarlas.
+
+## Crear gráficos dentro del dashboard
+
+1. Pulsa **Add widget**, incluso en el editor independiente o un dashboard vacío.
+2. Escribe el título, selecciona la conexión y escribe el SQL de ese gráfico.
+3. Pulsa **Run preview** para ejecutar la consulta que estás viendo. Aparecen
+   las columnas, una tabla con las primeras diez filas y una vista previa del gráfico.
+4. Elige tipo de gráfico, categoría X, series numéricas Y y eje izquierdo/derecho.
+   Un **Gauge** admite una consulta con una sola columna numérica. Usa alias únicos
+   para las columnas devueltas y el SQL para agrupar los datos que necesites.
+5. Elige actualización manual o periódica y pulsa **Apply widget**.
+6. Guarda el dashboard con **Save dashboard** o **Ctrl+S** para conservar SQL,
+   conexiones, gráficos y distribución en JSON y su copia SQL.
+
+Cada widget puede consultar tablas, SQL y conexiones diferentes. **Edit**, en la
+cabecera de cada widget, abre esta misma ventana. Los borradores sobreviven a los
+refrescos del dashboard; **Cancel** o **Escape** los descarta. **Stop preview**
+cancela solamente la consulta de la vista previa. Aplicar una vista previa utiliza
+su resultado sin volver a ejecutar el SQL.
+
+Puedes editar y aplicar el SQL de un widget existente sin ejecutar una vista previa,
+conservando sus nombres de columnas. En ese caso su aprobación se invalida y tendrás
+que revisar/ejecutar la consulta antes del refresco. Para un widget nuevo, ejecuta
+una vista previa para disponer de las columnas y configurar su gráfico.
+
+## Revisar y detener consultas
+
+La aprobación dura solamente durante la sesión de ese dashboard. Reabrir/importar
+un archivo o cambiar su SQL/conexión obliga a revisar la fuente de nuevo. No se
+guardan marcas de confianza en JSON ni en la copia SQL. Mover, redimensionar,
+renombrar o filtrar un widget conserva la aprobación de su fuente. **Run preview**
+es una ejecución explícita del SQL y conexión visibles en el editor; si aplicas
+ese mismo borrador, conserva la aprobación durante esa sesión.
+
+**Stop queries** solicita la cancelación de las consultas y pausa los intervalos;
+el botón **Stop** de un widget permite hacerlo individualmente. **Refresh** o
+**Refresh all** reanuda consultas aprobadas. Un error o timeout pausa la consulta
+afectada hasta que la actualices explícitamente.
+
+En **Window > Preferences > ECharts**, el timeout predeterminado es 30 segundos,
+con rango de 1 a 3600. Se ejecutan como máximo cuatro consultas simultáneas y
+cada una abre su propio contexto, separado de las transacciones del editor SQL.
+Las conexiones configuradas para usar una única sesión no pueden ejecutar estas
+consultas independientes. El soporte de cancelación/timeout depende del driver.
+
+El filtro SQL descarta lotes, operaciones de escritura/bloqueo y ciertas funciones
+con efectos secundarios; no garantiza que toda función `SELECT` sea inocua.
+Usa permisos de lectura en la base de datos para dashboards de control.
 
 ## Mover y redimensionar widgets
 
@@ -63,7 +113,7 @@ conserva las posiciones guardadas.
 
 El **JSON es el documento principal**. El `.sql` es una copia generada, organizada
 por widget, para consultar, reutilizar o versionar las consultas. Edita el SQL
-desde **Source** o dentro del JSON y vuelve a guardar. Cambiar solamente el `.sql`
+desde **Edit** o dentro del JSON y vuelve a guardar. Cambiar solamente el `.sql`
 no modifica el dashboard y ese archivo se regenera en el siguiente guardado.
 
 Los archivos anteriores con `schemaVersion: 1` se admiten cuando contienen SQL
@@ -73,7 +123,7 @@ en la vista del resultado antes de exportarlo.
 
 Se guardan nombre/ID de conexión y proyecto, sin copiar la configuración JDBC
 ni sus credenciales. Si mueves un dashboard a otro workspace, elige la conexión
-local desde **Source → Use SQL**. Los IDs de conexión son referencias locales.
+local desde **Edit → Connection → Apply widget**. Los IDs de conexión son referencias locales.
 Los archivos antiguos que solo tienen el nombre usan una coincidencia única en
 su proyecto; un ID inexistente requiere elegir otra conexión explícitamente.
 
@@ -87,7 +137,7 @@ si el JSON cambió en disco desde que se abrió.
 
 `dev/dashboards/control-ventas.echarts-dashboard.json` incluye líneas, barras y
 un mapa de ciudades de Ecuador. Usa las tablas sintéticas de
-`dev/mariadb/seed.sql`; elige tu conexión en **Source** si su nombre o proyecto
+`dev/mariadb/seed.sql`; elige tu conexión en **Edit** si su nombre o proyecto
 no coincide con `General / test_hop_mcp`.
 
 Desde la raíz del repositorio, con JDK 21 y Node disponibles:

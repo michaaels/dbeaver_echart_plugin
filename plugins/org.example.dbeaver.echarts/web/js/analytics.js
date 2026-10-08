@@ -155,11 +155,11 @@
           }
         : { type: 'value', name: xColumn.name, scale: true, ...axisStyle(theme, true) };
     option.yAxis = [{
-      type: 'value', name: axisNames.left.join(', '), scale: true, position: 'left', ...axisStyle(theme, true)
+      type: 'value', name: axisNames.left.join(', '), scale: chartType !== 'bar', position: 'left', ...axisStyle(theme, true)
     }];
     if (axisNames.right.length) {
       option.yAxis.push({
-        type: 'value', name: axisNames.right.join(', '), scale: true, position: 'right', ...axisStyle(theme)
+        type: 'value', name: axisNames.right.join(', '), scale: chartType !== 'bar', position: 'right', ...axisStyle(theme)
       });
     }
     option.dataZoom = dataZoom();

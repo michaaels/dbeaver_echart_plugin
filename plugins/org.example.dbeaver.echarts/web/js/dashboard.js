@@ -84,7 +84,7 @@
     if (renderer) dashboard.renderer = renderer === 'svg' ? 'svg' : 'canvas';
     for (const widget of dashboard.widgets) {
       if (!widget.source.sql.trim()) {
-        throw new Error(`"${widget.title}" has no SQL. Open Source and assign its query before saving.`);
+        throw new Error(`"${widget.title}" has no SQL. Open Edit and assign its query before saving.`);
       }
       widget.source.kind = 'savedQuery';
       if (widget.refreshPolicy.mode === 'onResult') widget.refreshPolicy.mode = 'manual';
@@ -143,10 +143,10 @@
       element.dataset.widgetId = widget.id;
       applyLayout(element, widget.layout);
 
-      const header = buildHeader(widget, dashboard, onChange);
+      const header = buildHeader(widget, dashboard, onChange, options.onEdit);
       const chartElement = document.createElement('div');
       chartElement.className = 'widget-chart';
-      const footer = buildFooter(widget, onChange, onRefresh);
+      const footer = buildFooter(widget, onChange, onRefresh, widgetRequests?.has(widget.id), options.onCancel);
       element.append(header, chartElement, footer);
       addLayoutControls(root, element, header, widget, dashboard, onChange);
       root.appendChild(element);
@@ -304,7 +304,7 @@
     try { handle.setPointerCapture?.(pointerId); } catch (error) { /* Document listeners also cover older SWT browsers. */ }
   }
 
-  function buildHeader(widget, dashboard, onChange) {
+  function buildHeader(widget, dashboard, onChange, onEdit) {
     const header = document.createElement('header');
     header.className = 'widget-header';
     const move = document.createElement('button');
@@ -337,11 +337,18 @@
       dashboard.widgets = dashboard.widgets.filter(item => item.id !== widget.id);
       onChange();
     });
-    header.append(move, title, source, remove);
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'widget-edit';
+    edit.textContent = 'Edit';
+    edit.setAttribute('aria-label', `Edit ${widget.title}`);
+    edit.title = 'Edit SQL, connection and chart';
+    edit.addEventListener('click', () => onEdit?.(widget));
+    header.append(move, title, source, edit, remove);
     return header;
   }
 
-  function buildFooter(widget, onChange, onRefresh) {
+  function buildFooter(widget, onChange, onRefresh, loading, onCancel) {
     const footer = document.createElement('footer');
     footer.className = 'widget-footer';
     const policy = document.createElement('select');
@@ -362,43 +369,10 @@
 
     const refresh = document.createElement('button');
     refresh.type = 'button';
-    refresh.textContent = 'Refresh';
-    refresh.addEventListener('click', () => onRefresh(widget));
+    refresh.textContent = loading ? 'Stop' : 'Refresh';
+    refresh.addEventListener('click', () => loading ? onCancel?.(widget) : onRefresh(widget));
 
-    const source = document.createElement('details');
-    const summary = document.createElement('summary');
-    summary.textContent = 'Source';
-    const editor = document.createElement('div');
-    editor.className = 'widget-source-editor';
-    const sql = document.createElement('textarea');
-    sql.value = widget.source.sql;
-    sql.placeholder = 'Read-only SQL; blank uses the active ResultSet';
-    const connection = document.createElement('select');
-    connection.setAttribute('aria-label', 'DBeaver connection');
-    connection.append(new Option(widget.source.connection || 'Choose connection', ''));
-    let connections = [];
-    if (typeof window.dbeaverListConnections === 'function') {
-      try { connections = JSON.parse(window.dbeaverListConnections()); } catch (error) { console.error(error); }
-    }
-    connections.forEach((item, index) => {
-      connection.append(new Option(`${item.project} / ${item.connection}`, String(index)));
-      if (item.connectionId === widget.source.connectionId && item.project === widget.source.project) {
-        connection.value = String(index);
-      }
-    });
-    const apply = document.createElement('button');
-    apply.type = 'button';
-    apply.textContent = 'Use SQL';
-    apply.addEventListener('click', () => {
-      widget.source.sql = sql.value;
-      widget.source.kind = widget.source.sql ? 'savedQuery' : 'activeResultSet';
-      if (connection.value !== '') Object.assign(widget.source, connections[Number(connection.value)]);
-      onChange();
-      onRefresh(widget);
-    });
-    editor.append(connection, sql, apply);
-    source.append(summary, editor);
-    footer.append(policy, refresh, source);
+    footer.append(policy, refresh);
     return footer;
   }
 
@@ -425,10 +399,17 @@
       return;
     }
     const snapshot = widget.source.kind === 'savedQuery' ? widgetSnapshot : activeSnapshot;
+    if (snapshot?.rows?.length === 0) {
+      element.classList.add('message');
+      element.textContent = 'The query returned no rows.';
+      return;
+    }
     const context = buildContext(widget, dashboard, snapshot, theme);
     if (!context) {
       element.classList.add('message');
-      element.textContent = 'Run the widget source query or select compatible columns.';
+      element.textContent = widget.source.kind === 'savedQuery' && !widgetSnapshot
+        ? 'Review SQL and run the widget query to load its data.'
+        : 'Run the widget source query or select compatible columns.';
       return;
     }
     const chart = window.echarts.init(element, null, { renderer });

@@ -21,9 +21,21 @@ public final class PluginRegistryTest {
             for (String name : new String[] { "org.eclipse.equinox.registry", "org.eclipse.core.runtime", "org.eclipse.core.contenttype" }) {
                 bundle(framework.getBundles(), name).start();
             }
-            Bundle plugin = framework.installBundle(Path.of(args[4]).toUri().toString());
+            Bundle plugin = args.length > 5 && args[5].equals("installed")
+                ? bundle(framework.getBundles(), "org.example.dbeaver.echarts")
+                : framework.installBundle(Path.of(args[4]).toUri().toString());
             plugin.start();
             if (plugin.getState() != Bundle.ACTIVE) throw new AssertionError("Plugin unresolved");
+            var assets = plugin.loadClass("org.example.dbeaver.echarts.WebAssets").getDeclaredMethod("resolve", String.class);
+            assets.setAccessible(true);
+            var index = (java.net.URL) assets.invoke(null, "web/index.html");
+            if (!java.nio.file.Files.isRegularFile(Path.of(index.toURI()))) throw new AssertionError("Frontend did not resolve to a local file");
+            if (args.length > 5 && args[5].equals("installed")) {
+                for (String resource : new String[] { "LICENSE", "about.html", "web/js/echarts.min.js", "web/js/dashboard.js", "web/js/widget-editor.js", "web/js/world-map.js", "third-party" }) {
+                    if (plugin.getEntry(resource) == null) throw new AssertionError("Installed resource missing: " + resource);
+                }
+                System.out.println("Installed bundle version: " + plugin.getVersion() + "; frontend: " + index);
+            }
             Class<?> platform = bundle(framework.getBundles(), "org.eclipse.core.runtime")
                 .loadClass("org.eclipse.core.runtime.Platform");
             Object manager = platform.getMethod("getContentTypeManager").invoke(null);

@@ -59,6 +59,10 @@ public final class EChartsPresentation extends AbstractPresentation {
     private BrowserFunction importDashboardFunction;
     private BrowserFunction exportDashboardFunction;
     private BrowserFunction executeWidgetQueryFunction;
+    private BrowserFunction approveWidgetQueriesFunction;
+    private BrowserFunction cancelWidgetQueryFunction;
+    private BrowserFunction resetDashboardQueriesFunction;
+    private final DashboardQueryApproval queryApproval = new DashboardQueryApproval();
     private BrowserFunction saveDashboardFunction;
     private BrowserFunction openDashboardFunction;
     private BrowserFunction listConnectionsFunction;
@@ -209,7 +213,30 @@ public final class EChartsPresentation extends AbstractPresentation {
                         || !(arguments[1] instanceof String sql) || !(arguments[2] instanceof String source)) {
                         return Boolean.FALSE;
                     }
-                    scheduleWidgetQuery(widgetId, sql, source);
+                    try { return scheduleWidgetQuery(widgetId, sql, source); }
+                    catch (RuntimeException invalid) { return Boolean.FALSE; }
+                }
+            };
+            approveWidgetQueriesFunction = new BrowserFunction(browser, "dbeaverApproveWidgetQueries", true, new String[0]) {
+                @Override
+                public Object function(Object[] arguments) {
+                    return arguments.length == 1 && arguments[0] instanceof String json && queryApproval.approve(json);
+                }
+            };
+            cancelWidgetQueryFunction = new BrowserFunction(browser, "dbeaverCancelWidgetQuery", true, new String[0]) {
+                @Override
+                public Object function(Object[] arguments) {
+                    if (arguments.length < 1 || arguments.length > 2 || !(arguments[0] instanceof String id)) return Boolean.FALSE;
+                    if (arguments.length == 2 && Boolean.TRUE.equals(arguments[1])) queryApproval.revoke(id);
+                    cancelWidgetQuery(id);
+                    return Boolean.TRUE;
+                }
+            };
+            resetDashboardQueriesFunction = new BrowserFunction(browser, "dbeaverResetDashboardQueries", true, new String[0]) {
+                @Override
+                public Object function(Object[] arguments) {
+                    for (String id : widgetQueryJobs.keySet()) cancelWidgetQuery(id);
+                    queryApproval.clear();
                     return Boolean.TRUE;
                 }
             };
@@ -575,26 +602,30 @@ public final class EChartsPresentation extends AbstractPresentation {
         return document;
     }
 
-    private void scheduleWidgetQuery(String widgetId, String sql, String sourceJson) {
+    private void cancelWidgetQuery(String widgetId) {
         DashboardQueryJob previous = widgetQueryJobs.remove(widgetId);
-        if (previous != null) {
-            previous.cancel();
-        }
-        long generation = widgetQueryGenerations.merge(widgetId, 1L, Long::sum);
+        if (previous != null) previous.requestCancellation();
+        widgetQueryGenerations.merge(widgetId, 1L, Long::sum);
+    }
+
+    private boolean scheduleWidgetQuery(String widgetId, String sql, String sourceJson) {
+        if (sourceJson.length() > 1_048_576 || sql.length() > 1_000_000 || widgetId.length() > 200) return false;
         JsonObject source = JsonParser.parseString(sourceJson).getAsJsonObject();
-        boolean hasConnection = !DashboardFiles.string(source, "connectionId").isBlank()
-            || !DashboardFiles.string(source, "connection").isBlank();
+        if (!queryApproval.accepts(widgetId, sql, source)) return false;
+        cancelWidgetQuery(widgetId);
+        long generation = widgetQueryGenerations.merge(widgetId, 1L, Long::sum);
         DashboardQueryJob job = new DashboardQueryJob(
-            () -> hasConnection || controller == null ? DashboardConnections.resolve(source, dashboardProject)
-                : controller.getExecutionContext(),
+            () -> DashboardConnections.resolve(source, dashboardProject),
             sql,
             EChartsPreferences.getMaxRows(),
             EChartsPreferences.getMaxCells(),
+            EChartsPreferences.getQueryTimeoutSeconds(),
             snapshot -> publishWidgetSnapshot(widgetId, generation, snapshot),
             error -> publishWidgetError(widgetId, generation, error)
         );
         widgetQueryJobs.put(widgetId, job);
         job.schedule();
+        return true;
     }
 
     private void publishWidgetSnapshot(String widgetId, long generation, String snapshot) {
@@ -664,14 +695,16 @@ public final class EChartsPresentation extends AbstractPresentation {
             executeWidgetQueryFunction.dispose();
         }
         for (BrowserFunction function : new BrowserFunction[] {saveDashboardFunction, openDashboardFunction,
-                listConnectionsFunction, dashboardChangedFunction}) {
+                listConnectionsFunction, dashboardChangedFunction, approveWidgetQueriesFunction,
+                cancelWidgetQueryFunction, resetDashboardQueriesFunction}) {
             if (function != null && !function.isDisposed()) function.dispose();
         }
         for (DashboardQueryJob job : widgetQueryJobs.values()) {
-            job.cancel();
+            job.requestCancellation();
         }
         widgetQueryJobs.clear();
         widgetQueryGenerations.clear();
+        queryApproval.clear();
         if (datasetFunction != null && !datasetFunction.isDisposed()) {
             datasetFunction.dispose();
         }
