@@ -57,6 +57,13 @@ Important boundaries:
 - Apache ECharts 6.1.0
 - Verified compile and registry target: DBeaver Community 26.2.2 on Windows x86_64
 
+## Install in normal DBeaver
+
+Use the generated P2 ZIP through **Help → Install New Software → Add → Archive**,
+select **DBeaver ECharts Presentation**, accept the license and restart DBeaver.
+Eclipse is not needed to use the installed plugin. See the
+[installation and package build guide](docs/P2-UPDATE-SITE.md).
+
 See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) before widening the supported range.
 Production release as an independent plugin still has open requirements;
 see [the readiness review](docs/PRODUCTION-READINESS.md).
