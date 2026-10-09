@@ -61,11 +61,14 @@ if ($Javac) {
     $Tmp = Join-Path ([IO.Path]::GetTempPath()) ('dbeaver-echarts-' + [Guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Force -Path $Tmp | Out-Null
     try {
-        & javac -d $Tmp 'plugins\org.example.dbeaver.echarts\src\org\example\dbeaver\echarts\JsonWriter.java'
+        & javac --release 21 -d $Tmp 'plugins\org.example.dbeaver.echarts\src\org\example\dbeaver\echarts\JsonWriter.java'
         if ($LASTEXITCODE -ne 0) { throw 'JsonWriter.java compilation failed' }
         Write-Host 'Java OK (standalone): JsonWriter.java'
     } finally {
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $Tmp
+        $resolved = (Resolve-Path -LiteralPath $Tmp).Path
+        $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'
+        if (!$resolved.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase)) { throw "Refusing cleanup outside temporary directory: $resolved" }
+        Remove-Item -LiteralPath $resolved -Recurse -Force -ErrorAction SilentlyContinue
     }
 } else {
     Write-Host 'SKIP: javac is not installed'

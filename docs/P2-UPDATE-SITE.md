@@ -73,6 +73,14 @@ powershell -NoProfile -File scripts/test-p2-install.ps1 `
   -Destination ".dev/my-installed-test"
 ```
 
+To also test a version upgrade, add `-PreviousRepositoryZip <older-package.zip>`.
+The test installs the exact previous version, replaces it with the requested new
+version in one P2 transaction, checks that only the new bundle is registered,
+then uninstalls/reinstalls. The installed registry/resources are checked at each
+stage. JSON/SQL fixtures in the isolated workspace must retain their SHA-256
+checksums throughout. This checks installer preservation, not editor migrations.
+A machine-readable `p2-test-result.json` is written on success.
+
 The registry test uses the distribution's bundled Java when present.
 `ECHARTS_RUNTIME_JDK` can override it. To check an existing installation without
 compiling or repackaging the plugin:
@@ -80,6 +88,29 @@ compiling or repackaging the plugin:
 ```powershell
 node scripts/test-plugin-registry.js "D:/apps/dbeaver" --installed
 ```
+
+## GitHub Actions packages
+
+`.github/workflows/p2-package.yml` runs on PRs, pushes to `main` and manual dispatch.
+It uses a Windows 2022 runner and Java 21, downloads the fixed DBeaver 26.2.2
+target and Eclipse SDK 4.40 publisher, verifies their checksums, and runs source,
+query-control, DOM and headless Edge label-geometry tests. Tool versions and hashes
+are recorded in `dev/ci/p2-toolchain.json`; test dependencies use a committed npm
+lockfile. The publisher SDK version is independent of the DBeaver target version.
+
+The previous package is built from the commit in `dev/ci/upgrade-baseline.json`
+using a detached worktree. The current package must pass installation, upgrade,
+uninstallation, reinstallation, registry/resources and JSON/SQL preservation before
+it is uploaded as a downloadable Actions artifact with its checksum and test report.
+The baseline currently covers the first installable 0.5.0 package; update it
+intentionally when a new release becomes the supported upgrade baseline.
+
+Open **GitHub → Actions → P2 package → successful run → Artifacts** and download
+`dbeaver-echarts-p2-windows-<commit>`. Extract that Actions download, then select
+the inner `dbeaver-echarts-<version>.zip` in DBeaver's **Add → Archive** dialog.
+Artifacts are retained for 14 days. This workflow does not publish a GitHub Release
+or deploy a public update site. Real database/driver and SWT workbench tests remain
+outside this CI gate.
 
 This package is for testing. Signing, public hosting, other OS targets and full
 SWT workbench validation remain part of the [release gate](COMPATIBILITY.md).

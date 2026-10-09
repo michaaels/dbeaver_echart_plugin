@@ -1,0 +1,10 @@
+{
+  "name": "dbeaver-echarts-ci-tests",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Pinned dependencies for existing isolated DOM and Edge tests",
+  "dependencies": {
+    "linkedom": "0.18.13",
+    "playwright": "1.63.0"
+  }
+}
