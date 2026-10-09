@@ -1,0 +1,149 @@
+# Report Designer
+
+## Architecture and design review
+
+The existing SWT browser presentation owns connections, SQL approvals, bounded
+background query jobs, cancellation, theme synchronization and browser lifecycle.
+The report module reuses that presentation, `DashboardConnections`,
+`DashboardQueryJob`, `DashboardQueryApproval`, the 12-column layout engine and
+`DBeaverEChartsAnalytics`. Report files use a separate versioned marker and editor;
+dashboard files and their editor keep their existing format and behavior.
+
+The designer is a document workbench, with a component library on the left, a
+white report sheet in the center and properties on the right. The sheet is the
+memorable element: an actual report, not another dashboard surrounded by cards.
+Controls inherit DBeaver's theme. Reference tokens: canvas `#303030`, controls
+`#383838`, text `#eeeeee`, muted `#b0b0b0`, focus `#58a6e7`, report paper `#ffffff`.
+Segoe UI is the native control face (13px); the document uses a deliberate 28/20/14px
+title, section and body scale. Content is left aligned; margins, grid and alignment
+commands carry structure. No external fonts or frontend framework are introduced.
+
+```text
+Report Designer   Template name       Save  Undo  Refresh  Preview  Export
+Components      | Report sheet                        | Properties
+Text / KPI      | Title, date, logo                    | Layout / style
+Chart / Table   | KPIs, independent charts and tables  | Query / columns
+Section / Image | Sections, footer                    | Parameters
+```
+
+Review changed the initial dashboard-like plan: report paper remains white even
+in a dark workbench, and selection/resize chrome appears only in the designer.
+Preview and export use the same widget renderers. Email has a separate table-based
+representation because Outlook cannot run ECharts or modern grid layouts.
+
+## Responsibilities
+
+- `report-model.js`: versioned templates, validation, history, parameter definitions,
+  dashboard conversion and grouped grid layout. Runtime rows are never serialized.
+- `report-widgets.js`: registry, text/image/shape/section/date, KPI/table and ECharts
+  renderers, formatting, totals and conditional visibility.
+- `report-execution.js`: reviewed source requests, parameter values, result sharing
+  within a refresh, cancellation and stale-result suppression.
+- `report-export.js`: offline interactive HTML, static HTML and MIME EML drafts.
+- `report-designer.js`: visual editing, properties, source configuration, preview
+  and composition. Native save/open dialogs stay in the SWT bridge.
+- `ReportFiles`: bounded UTF-8 JSON and generated SQL companions, atomic writes.
+- `ReportParameters`: named parameters compiled to JDBC placeholders and bound
+  values. Identifiers/SQL fragments cannot be parameters.
+- `ReportDesignerView` / `ReportEditor`: DBeaver workbench entry and file reopening.
+
+## Data and email boundary
+
+Templates store connection references, SQL, parameter definitions and layout.
+They do not store JDBC URLs, passwords, authorization flags or execution results.
+Generation produces a snapshot with runtime parameter values and query results.
+Interactive HTML embeds the bundled ECharts, map, renderer and license notices;
+it has no database bridge or SQL and does not need a network connection.
+
+The Outlook action opens a composition dialog and exports a multipart EML draft:
+inline CID images, HTML without scripts and an optional interactive HTML attachment.
+The plugin never calls Send. Opening a saved EML uses the registered mail client;
+editing/sending depends on that client's EML support. Microsoft Graph OAuth and
+classic Outlook COM automation are separate future adapters, not implicit fallbacks.
+
+Microsoft documents opening EML in new Outlook and Outlook on the web:
+[EML support](https://support.microsoft.com/en-us/outlook/mail/open-eml-msg-and-oft-files-in-new-outlook-and-outlook-on-the-web).
+Opening a message is not a guarantee that every client treats it as an editable draft.
+
+## Use
+
+Open **Window > Show View > Other > ECharts > Report Designer**, or use
+**Report Designer** in the chart/dashboard toolbar to reuse its chart definitions.
+Add components, select them to edit properties, and configure sources in **Data**.
+Sources use named placeholders such as `:start_date`, with typed values in
+**Parameters**. Review SQL before refreshing or generating a report.
+Save templates under `Reports/ECharts` as `.echarts-report.json` with a generated
+`.echarts-report.sql` companion. The JSON is authoritative.
+
+Click a library component to add it or drag it onto the sheet/section. Drag its
+selected title strip to move it; every edge and corner resizes it. Arrow keys move
+the component, and the southeast resize handle also supports arrow keys. Shift-click
+selects multiple components for alignment. Ctrl+C/V/D, Delete and Ctrl+Z/Y support
+copy, paste, duplicate, delete and undo/redo. Zoom affects editing, not saved sizes.
+Layout uses 12 columns and 24px rows with configurable spacing; up to three nested
+sections are supported. Headers/footers are normal reusable sections, not repeating
+print-page elements.
+
+**Templates** filters saved reports by name/category. **Use template** and
+**Duplicate template** create a new report in the workbench view, preserving the
+current file editor. Import/export definitions from the library/Export menu.
+Set a template as the default in Report properties, then save it under Reports/ECharts.
+Rename/delete templates through DBeaver's Files navigator; remove a generated SQL
+companion as well when deleting its template. The JSON is the editable definition;
+changes to the generated SQL companion do not change queries in the report.
+
+The sample [daily sales template](../dev/reports/daily-sales.echarts-report.json)
+uses the existing `echarts_test_sales` table. Open it and select your own connection
+in **Data**. It stores no runtime rows or developer connection identifier.
+
+Use **Preview** for the last successful data snapshot, **Generate report** to
+refresh reviewed sources, and **Export HTML** for an offline interactive file or
+static email-compatible version. **Outlook draft** lets you review recipients,
+subject, message, inline report and attachment before saving an EML.
+
+## Validation and practical limits
+
+Automated checks cover the following boundaries:
+
+| Area | Evidence |
+| --- | --- |
+| Model and engine | `test-report-model.js`: schema, imported chart options/SQL, section cycles, bounded history, typed values, query sharing, four-query queue, errors, empty results, cancellation and obsolete results |
+| Native files/parameters | `ReportFilesTest` and `ReportParametersTest`: UTF-8 JSON/SQL, unknown-field stripping, default pointer lifecycle, collision protection, lexical placeholders, typed JDBC setters through the actual job adapter and approval invalidation |
+| Visual authoring | `test-report-designer.js`: image, text/date, chart preview/dual axes, KPI/table reuse, totals/subtotals, pagination, column headers/conditional color/visibility, properties, keyboard layout, undo, duplication, save/reopen and export |
+| Mouse and lifecycle | `test-report-interactions.js`: all eight resize directions, full edge hit surfaces, anchored edges, ECharts dimensions, Escape, zoom, move, empty-section drag/drop, copying descendants, failed refresh and 360–1440px windows |
+| Portable output | Generated HTML reopened with Edge network access disabled; ECharts, KPI/table and local assets checked. Static HTML checked for no scripts/canvas/grid. `test-report-eml.py` independently decodes MIME, Unicode, two inline PNG/CIDs and the byte-identical HTML attachment |
+| Existing functionality | Existing analytical chart, labels, dashboard schema/layout/bridge/authoring and query timeout/cancellation suites |
+| Packaging | P2 lifecycle checks install/upgrade/uninstall/reinstall, installed report view/editor/content type/assets and unchanged JSON/SQL fixtures for dashboards and reports |
+
+Browser integration uses deterministic query/connection bridge fixtures, not a live
+database. Java tests compile against DBeaver Community 26.2.2 and exercise its API
+adapter with controlled sessions. Manual acceptance in the actual SWT workbench,
+with real driver connections and each Outlook version, remains required before
+calling this a production release. The ZIP is a test build, not a signed release.
+
+Limits: 64 components, 24 source definitions, 32 parameters, 8 MiB template and
+32 MiB generated output. SQL runs in isolated, bounded background jobs with at most
+four concurrent requests, using the lower of a source row limit and the global
+preference. Identical source requests share one execution during each refresh;
+explicit refresh obtains fresh results. Undo history is capped at 80 entries and
+approximately 24 MiB. Charts/observers/jobs are released when pages close.
+
+Named values bind as text, decimal, ISO date or boolean; they cannot replace SQL
+identifiers or fragments. Existing conservative read-only SQL validation applies.
+Parameterized sources require JDBC drivers exposing DBeaver's bounded statement
+adapter. Strings with ambiguous backslash quoting and raw `?` placeholders are
+rejected. Multi-statement scripts and write/locking operations are unsupported.
+
+Number/date display follows browser locale; currency is USD. Tables paginate in
+the editor/interactive HTML; static email includes all retrieved rows and grows
+naturally. Group subtotals in a paginated interactive table apply to visible rows,
+while the grand total covers the snapshot. Email tables preserve column placement
+and content, adapting row heights rather than reproducing arbitrary grid pixels.
+Graph OAuth, desktop COM and real mail submission are not implemented. Exporting
+HTML intentionally includes the selected data and runtime parameter values for
+sharing, but omits SQL, connection identifiers and database credentials.
+
+Visual review corrected the email renderer's mixed-width rows with explicit grid
+column spans, preserved descendant styles before removing CSS classes, and retained
+chart headings/logos. The report sheet remains legible in both host themes, and
+resize chrome never appears in exports.

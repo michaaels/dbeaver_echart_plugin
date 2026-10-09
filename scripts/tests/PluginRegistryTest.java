@@ -45,9 +45,19 @@ public final class PluginRegistryTest {
             if (type == null || !"org.example.dbeaver.echarts.dashboard".equals(call(type, "getId", new Class<?>[0]))) {
                 throw new AssertionError("Eclipse content manager did not select the dashboard type");
             }
+            boolean reports = plugin.getVersion().getMajor() > 0 || plugin.getVersion().getMinor() >= 6;
+            if (reports) {
+                String report = "{\"format\":\"dbeaver-echarts-report\",\"schemaVersion\":1,\"sources\":[],\"widgets\":[]}";
+                Object reportType = call(manager, "findContentTypeFor", new Class<?>[] { java.io.InputStream.class, String.class },
+                    new ByteArrayInputStream(report.getBytes(StandardCharsets.UTF_8)), "sample.echarts-report.json");
+                if (reportType == null || !"org.example.dbeaver.echarts.report".equals(call(reportType, "getId", new Class<?>[0]))) throw new AssertionError("Report content type missing");
+                for (String resource : new String[] { "web/report.html", "web/js/report-model.js", "web/js/report-widgets.js", "web/js/report-execution.js", "web/js/report-export.js", "web/js/report-properties.js", "web/js/report-designer.js", "web/css/report-paper.css", "web/css/report-designer.css" }) {
+                    if (plugin.getEntry(resource) == null) throw new AssertionError("Report resource missing: " + resource);
+                }
+            }
             Object registry = platform.getMethod("getExtensionRegistry").invoke(null);
-            boolean editor = false, handler = false;
-            for (String point : new String[] { "org.eclipse.ui.editors", "org.jkiss.dbeaver.resourceHandler" }) {
+            boolean editor = false, handler = false, reportEditor = false, reportHandler = false, reportView = false;
+            for (String point : new String[] { "org.eclipse.ui.editors", "org.jkiss.dbeaver.resourceHandler", "org.eclipse.ui.views" }) {
                 Object[] elements = (Object[]) call(registry, "getConfigurationElementsFor", new Class<?>[] { String.class }, point);
                 for (Object element : elements) {
                     String className = (String) call(element, "getAttribute", new Class<?>[] { String.class }, "class");
@@ -57,13 +67,17 @@ public final class PluginRegistryTest {
                     if (point.equals("org.eclipse.ui.editors")) {
                         Object instance = plugin.loadClass(className).getConstructor().newInstance();
                         editor |= instance.getClass().getName().endsWith("DashboardEditor");
+                        reportEditor |= instance.getClass().getName().endsWith("ReportEditor");
                     }
                     // Navigator initialization requires the DBeaver application platform.
                     // Validate registration here; the running workbench owns activation.
                     handler |= className.endsWith("DashboardResourceHandler");
+                    reportHandler |= className.endsWith("ReportResourceHandler");
+                    if (className.endsWith("ReportDesignerView")) { plugin.loadClass(className).getConstructor().newInstance(); reportView = true; }
                 }
             }
             if (!editor || !handler) throw new AssertionError("Dashboard editor or resource handler extension could not be instantiated");
+            if (reports && (!reportEditor || !reportHandler || !reportView)) throw new AssertionError("Report view/editor/handler missing");
             System.out.println("Equinox registry tests OK: bundle resolved, JSON recognized, editor and navigator handler registered");
         } finally {
             EclipseStarter.shutdown();

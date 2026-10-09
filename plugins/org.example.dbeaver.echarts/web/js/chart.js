@@ -114,6 +114,13 @@
       schedulePersistConfiguration();
     });
     const popovers = [...document.querySelectorAll('.toolbar-popover')];
+    $('openReportDesigner').addEventListener('click', () => {
+      const dashboard = state.viewMode === 'dashboard' ? state.dashboard : {
+        title: state.snapshot?.source?.name || 'Report from chart',
+        widgets: state.snapshot ? [window.DBeaverEChartsDashboard.createWidget(currentChartConfiguration(), state.snapshot)] : []
+      };
+      if (window.dbeaverOpenReportDesigner?.(JSON.stringify(dashboard)) !== true) els.status.textContent = 'Report Designer could not open. Use Window > Show View > ECharts > Report Designer.';
+    });
     const closePopovers = except => popovers.forEach(popover => { if (popover !== except) popover.open = false; });
     const positionPopover = popover => {
       if (!popover.open) return;

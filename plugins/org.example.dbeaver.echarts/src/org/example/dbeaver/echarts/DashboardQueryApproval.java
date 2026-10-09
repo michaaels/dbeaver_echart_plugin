@@ -43,6 +43,9 @@ final class DashboardQueryApproval {
         for (String field : new String[] {"kind", "project", "connectionId", "connection"}) {
             parts.add(DashboardFiles.string(source, field));
         }
+        // Report approvals also bind typed values and per-source row limits.
+        if (source.has("parameters")) parts.add(source.get("parameters"));
+        if (source.has("maxRows")) parts.add(source.get("maxRows"));
         return parts.toString();
     }
 }

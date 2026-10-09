@@ -287,6 +287,8 @@ button:focus-visible, select:focus-visible, input:focus-visible, summary:focus-v
 .standalone-dashboard .toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 6px 12px; }
 .standalone-dashboard .dashboard-actions { grid-column: 1; grid-row: 1; }
 .standalone-dashboard .display-options { grid-column: 2; grid-row: 1; align-self: start; }
+.toolbar-auxiliary { display: flex; flex-wrap: wrap; align-items: start; gap: 6px; }
+.standalone-dashboard .toolbar-auxiliary { grid-column: 2; grid-row: 1; justify-content: end; }
 .standalone-dashboard #status { grid-column: 1 / -1; margin: 0; justify-self: start; }
 
 #dashboardTitle {

@@ -39,8 +39,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Base64;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -80,6 +84,12 @@ public final class EChartsPresentation extends AbstractPresentation {
     private Consumer<String> configurationChanged;
     private Function<String, String> saveDocument;
     private Runnable markDirty;
+    private boolean reportMode;
+    private boolean reportLoadingAsNew;
+    private Path reportFile;
+    private String reportDiskText;
+    private Runnable reportSaved;
+    private final List<BrowserFunction> reportFunctions = new ArrayList<>();
     private final Map<String, DashboardQueryJob> widgetQueryJobs = new ConcurrentHashMap<>();
     private final Map<String, Long> widgetQueryGenerations = new ConcurrentHashMap<>();
 
@@ -104,6 +114,32 @@ public final class EChartsPresentation extends AbstractPresentation {
         createBrowser(parent);
     }
 
+    void createReport(Composite parent, String document, DBPProject project,
+                      Consumer<String> onChange, Function<String, String> onSave, Runnable onDirty) {
+        reportMode = true;
+        createStandalone(parent, document, project, onChange, onSave, onDirty);
+    }
+
+    void loadReport(String document) {
+        standaloneDocument = ReportFiles.canonical(document);
+        reportFile = null;
+        reportDiskText = null;
+        reportLoadingAsNew = true;
+        if (browserReady) executeBrowser("window.DBeaverECharts.loadReport(JSON.parse(" + JsonWriter.write(standaloneDocument) + "),true);" );
+    }
+
+    void setReportSavedListener(Runnable listener) { reportSaved = listener; }
+
+    String currentReportDocument() {
+        if (!isBrowserAvailable() || !browserReady) throw new IllegalStateException("The report designer is still loading.");
+        Object value = browser.evaluate("return JSON.stringify(window.DBeaverECharts.reportDocument());");
+        if (!(value instanceof String document)) throw new IllegalStateException("Cannot read the report template.");
+        return ReportFiles.canonical(document);
+    }
+
+    String saveCurrentReport(boolean saveAs) { return saveReport(currentReportDocument(), saveAs); }
+    void markReportSaved() { executeBrowser("window.DBeaverECharts.markReportSaved();"); }
+
     private void createBrowser(Composite parent) {
         display = parent.getDisplay();
 
@@ -112,7 +148,7 @@ public final class EChartsPresentation extends AbstractPresentation {
         root.setLayout(new FillLayout());
 
         try {
-            URL page = WebAssets.resolve("web/index.html");
+            URL page = WebAssets.resolve(reportMode ? "web/report.html" : "web/index.html");
             String allowedPage = page.toExternalForm();
             Path allowedRoot = Paths.get(page.toURI()).getParent().toAbsolutePath().normalize();
 
@@ -262,6 +298,7 @@ public final class EChartsPresentation extends AbstractPresentation {
                 }
             };
 
+            registerReportFunctions();
             registerThemeListener();
             if (!browser.setUrl(allowedPage)) {
                 throw new IllegalStateException("SWT Browser refused to load: " + allowedPage);
@@ -346,7 +383,7 @@ public final class EChartsPresentation extends AbstractPresentation {
         }
         browserReady = true;
         if (standaloneDocument != null) {
-            executeBrowser("window.DBeaverECharts.loadDashboard(JSON.parse(" + JsonWriter.write(standaloneDocument) + "),true);");
+            executeBrowser("window.DBeaverECharts." + (reportMode ? "loadReport" : "loadDashboard") + "(JSON.parse(" + JsonWriter.write(standaloneDocument) + ")," + (!reportMode || reportLoadingAsNew) + ");");
         } else { publishConfiguration(); }
         publishTheme();
         scheduleSnapshot();
@@ -612,16 +649,20 @@ public final class EChartsPresentation extends AbstractPresentation {
         if (sourceJson.length() > 1_048_576 || sql.length() > 1_000_000 || widgetId.length() > 200) return false;
         JsonObject source = JsonParser.parseString(sourceJson).getAsJsonObject();
         if (!queryApproval.accepts(widgetId, sql, source)) return false;
+        ReportParameters.Plan plan = ReportParameters.prepare(sql, source.has("parameters") ? source.getAsJsonObject("parameters") : null);
+        int maxRows = EChartsPreferences.getMaxRows();
+        if (reportMode && source.has("maxRows") && source.get("maxRows").getAsInt() > 0) maxRows = Math.min(maxRows, source.get("maxRows").getAsInt());
         cancelWidgetQuery(widgetId);
         long generation = widgetQueryGenerations.merge(widgetId, 1L, Long::sum);
         DashboardQueryJob job = new DashboardQueryJob(
             () -> DashboardConnections.resolve(source, dashboardProject),
-            sql,
-            EChartsPreferences.getMaxRows(),
+            plan.sql(),
+            maxRows,
             EChartsPreferences.getMaxCells(),
             EChartsPreferences.getQueryTimeoutSeconds(),
             snapshot -> publishWidgetSnapshot(widgetId, generation, snapshot),
-            error -> publishWidgetError(widgetId, generation, error)
+            error -> publishWidgetError(widgetId, generation, error),
+            plan.bindings()
         );
         widgetQueryJobs.put(widgetId, job);
         job.schedule();
@@ -654,6 +695,155 @@ public final class EChartsPresentation extends AbstractPresentation {
         });
     }
 
+    private void reportFunction(String name, Function<Object[], Object> action) {
+        reportFunctions.add(new BrowserFunction(browser, name, true, new String[0]) {
+            @Override public Object function(Object[] arguments) {
+                try { return action.apply(arguments); }
+                catch (Exception error) { showDashboardError(error); return null; }
+            }
+        });
+    }
+
+    private void registerReportFunctions() {
+        reportFunction("dbeaverOpenReportDesigner", arguments -> {
+            if (arguments.length != 1 || !(arguments[0] instanceof String document)) return false;
+            try {
+                String report = ReportFiles.fromDashboard(document);
+                var view = (ReportDesignerView) PlatformUI.getWorkbench().getActiveWorkbenchWindow().getActivePage().showView(ReportDesignerView.ID);
+                return view.load(report);
+            } catch (Exception error) { throw new IllegalStateException(error); }
+        });
+        if (!reportMode) return;
+        reportFunction("dbeaverNewReport", arguments -> {
+            if (arguments.length != 1 || !(arguments[0] instanceof String document)) return false;
+            try {
+                String report = ReportFiles.canonical(document);
+                var view = (ReportDesignerView) PlatformUI.getWorkbench().getActiveWorkbenchWindow().getActivePage().showView(ReportDesignerView.ID);
+                return view.load(report);
+            } catch (Exception error) { throw new IllegalStateException(error); }
+        });
+        reportFunction("dbeaverSaveReport", arguments -> arguments.length >= 1 && arguments[0] instanceof String document
+            ? saveReport(document, arguments.length > 1 && Boolean.TRUE.equals(arguments[1])) : null);
+        reportFunction("dbeaverImportReport", arguments -> {
+            FileDialog dialog = reportDialog(SWT.OPEN, "Import report template", "*.echarts-report.json");
+            String selected = dialog.open();
+            if (selected == null) return null;
+            try { return ReportFiles.read(Path.of(selected)); }
+            catch (Exception error) { throw new IllegalStateException(error); }
+        });
+        reportFunction("dbeaverOpenReport", arguments -> {
+            FileDialog dialog = reportDialog(SWT.OPEN, "Open report template", "*.echarts-report.json");
+            String selected = dialog.open();
+            if (selected == null) return false;
+            try {
+                Path file = Path.of(selected); ReportFiles.read(file);
+                IDE.openEditor(PlatformUI.getWorkbench().getActiveWorkbenchWindow().getActivePage(), file.toUri(), ReportEditor.ID, true);
+                return true;
+            } catch (Exception error) { throw new IllegalStateException(error); }
+        });
+        reportFunction("dbeaverListReportTemplates", arguments -> {
+            List<Map<String, Object>> templates = new ArrayList<>();
+            Path folder = reportFolder();
+            if (Files.isDirectory(folder)) {
+                try (var files = Files.walk(folder, 3)) {
+                    for (Path file : files.filter(path -> Files.isRegularFile(path) && path.getFileName().toString().endsWith(ReportFiles.SUFFIX)).limit(500).toList()) {
+                        try {
+                            JsonObject report = ReportFiles.parse(ReportFiles.read(file));
+                            templates.add(Map.of("path", folder.relativize(file).toString(), "title", DashboardFiles.string(report, "title"),
+                                "category", DashboardFiles.string(report, "category"), "description", DashboardFiles.string(report, "description")));
+                        } catch (Exception ignored) { /* Invalid templates stay visible in DBeaver's Files navigator. */ }
+                    }
+                } catch (Exception error) { throw new IllegalStateException(error); }
+            }
+            return JsonWriter.write(templates);
+        });
+        reportFunction("dbeaverLoadReportTemplate", arguments -> {
+            if (arguments.length != 1 || !(arguments[0] instanceof String relative)) return null;
+            Path folder = reportFolder().toAbsolutePath().normalize(), target = folder.resolve(relative).normalize();
+            if (!target.startsWith(folder) || !target.getFileName().toString().endsWith(ReportFiles.SUFFIX)) return null;
+            try { return ReportFiles.read(target); } catch (Exception error) { throw new IllegalStateException(error); }
+        });
+        reportFunction("dbeaverReportPickImage", arguments -> {
+            FileDialog dialog = new FileDialog(browser.getShell(), SWT.OPEN);
+            dialog.setText("Choose local report image (up to 2 MiB)"); dialog.setFilterExtensions(new String[] {"*.png;*.jpg;*.jpeg;*.gif;*.webp"});
+            String selected = dialog.open(); if (selected == null) return null;
+            try {
+                Path file = Path.of(selected);
+                if (Files.size(file) > 2_097_152) throw new IllegalArgumentException("Image exceeds 2 MiB.");
+                String extension = file.getFileName().toString().replaceFirst("^.*\\.", "").toLowerCase(Locale.ROOT);
+                String type = switch (extension) { case "png", "gif", "webp" -> extension; case "jpg", "jpeg" -> "jpeg"; default -> throw new IllegalArgumentException("Unsupported image."); };
+                return "data:image/" + type + ";base64," + Base64.getEncoder().encodeToString(Files.readAllBytes(file));
+            } catch (Exception error) { throw new IllegalStateException(error); }
+        });
+        reportFunction("dbeaverReportExportAssets", arguments -> {
+            Map<String, String> assets = new LinkedHashMap<>();
+            for (var entry : Map.of("echarts", "web/js/echarts.min.js", "worldMap", "web/js/world-map.js", "analytics", "web/js/analytics.js",
+                    "widgets", "web/js/report-widgets.js", "paperCss", "web/css/report-paper.css").entrySet()) {
+                assets.put(entry.getKey(), assetText(entry.getValue()));
+            }
+            assets.put("licenses", assetText("third-party/echarts/LICENSE") + "\n" + assetText("third-party/echarts/NOTICE")
+                + "\n" + assetText("third-party/echarts/licenses/LICENSE-d3") + "\n" + assetText("third-party/world-map/LICENSE"));
+            return JsonWriter.write(assets);
+        });
+        reportFunction("dbeaverExportReport", arguments -> {
+            if (arguments.length < 3 || !(arguments[0] instanceof String content) || !(arguments[1] instanceof String kind)
+                || !(arguments[2] instanceof String title) || !Set.of("interactive", "email", "template", "eml").contains(kind)) return null;
+            if (content.getBytes(StandardCharsets.UTF_8).length > ReportFiles.MAX_EXPORT_BYTES) throw new IllegalArgumentException("Generated report exceeds 32 MiB.");
+            String extension = "template".equals(kind) ? ".echarts-report.json" : "eml".equals(kind) ? ".eml" : ".html";
+            FileDialog dialog = reportDialog(SWT.SAVE, "eml".equals(kind) ? "Save email draft (not sent)" : "Export report", "*" + extension);
+            dialog.setFileName(fileName(title) + extension); dialog.setOverwrite(true);
+            String selected = dialog.open(); if (selected == null) return null;
+            try {
+                Path file = Path.of(selected);
+                if ("template".equals(kind)) ReportFiles.write(file, content); else ReportFiles.export(file, content);
+                boolean opened = "eml".equals(kind) && arguments.length > 3 && Boolean.TRUE.equals(arguments[3])
+                    && org.eclipse.swt.program.Program.launch(file.toString());
+                return JsonWriter.write(Map.of("path", file.toString(), "opened", opened, "sent", false));
+            } catch (Exception error) { throw new IllegalStateException(error); }
+        });
+    }
+
+    private static String assetText(String name) {
+        try { return Files.readString(Path.of(WebAssets.resolve(name).toURI()), StandardCharsets.UTF_8); }
+        catch (Exception error) { throw new IllegalStateException("Cannot read bundled report asset: " + name, error); }
+    }
+    private Path reportFolder() {
+        DBPProject project = dashboardProject != null ? dashboardProject : DBWorkbench.getPlatform().getWorkspace().getActiveProject();
+        if (project == null) throw new IllegalStateException("Open a DBeaver project first.");
+        return project.getAbsolutePath().resolve("Reports").resolve("ECharts");
+    }
+    private FileDialog reportDialog(int style, String title, String extension) {
+        FileDialog dialog = new FileDialog(browser.getShell(), style);
+        dialog.setText(title); dialog.setFilterExtensions(new String[] {extension});
+        try { dialog.setFilterPath(reportFolder().toString()); } catch (RuntimeException ignored) { }
+        return dialog;
+    }
+    private static String fileName(String title) {
+        String name = title.replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", "_").replaceAll("[ .]+$", "");
+        return name.isBlank() ? "report" : name.substring(0, Math.min(name.length(), 120));
+    }
+    private String saveReport(String document, boolean saveAs) {
+        try {
+            JsonObject report = ReportFiles.parse(document);
+            if (saveDocument != null && !saveAs) return saveDocument.apply(document);
+            Path file = reportFile;
+            if (file == null || saveAs) {
+                Path folder = reportFolder(); Files.createDirectories(folder);
+                FileDialog dialog = reportDialog(SWT.SAVE, "Save report template (JSON and SQL)", "*.echarts-report.json");
+                dialog.setFileName(fileName(DashboardFiles.string(report, "title")) + ReportFiles.SUFFIX); dialog.setOverwrite(true);
+                String selected = dialog.open(); if (selected == null) return null;
+                file = Path.of(selected);
+            } else if (!Files.exists(file) || !Files.readString(file, StandardCharsets.UTF_8).equals(reportDiskText)) {
+                throw new IllegalStateException("The report changed on disk. Reopen it before saving.");
+            }
+            ReportFiles.write(file, document); reportFile = file; reportDiskText = Files.readString(file, StandardCharsets.UTF_8);
+            ReportFiles.updateDefault(reportFolder(), file, report.has("defaultTemplate") && report.get("defaultTemplate").getAsBoolean());
+            if (dashboardProject != null) dashboardProject.refreshProject();
+            if (reportSaved != null) reportSaved.run();
+            return file.toString();
+        } catch (Exception error) { showDashboardError(error); return null; }
+    }
+
     private static String rgb(Color color) {
         return String.format(Locale.ROOT, "#%02x%02x%02x", color.getRed(), color.getGreen(), color.getBlue());
     }
@@ -668,6 +858,8 @@ public final class EChartsPresentation extends AbstractPresentation {
 
     @Override
     public void dispose() {
+        for (BrowserFunction function : reportFunctions) if (!function.isDisposed()) function.dispose();
+        reportFunctions.clear();
         snapshotGeneration++;
         if (snapshotJob != null) {
             snapshotJob.cancel();

@@ -17,6 +17,9 @@ Target verificado: **DBeaver Community 26.2.2, Windows x86_64**.
 6. Ejecuta un `SELECT` y abre la pestaña **ECharts** del resultado. Para un dashboard
    guardado, abre `*.echarts-dashboard.json` desde el proyecto. Cada widget permite
    editar su consulta y conexión con **Edit**.
+7. En la versión 0.6.0, abre **Window → Show View → Other → ECharts → Report Designer**
+   para diseñar reportes. También puedes usar **Report Designer** en la barra de un
+   gráfico/dashboard y abrir plantillas `*.echarts-report.json`.
 
 Para desinstalar: **Help → About DBeaver → Installation Details → Installed Software**,
 selecciona **DBeaver ECharts Presentation** y pulsa **Uninstall**.

@@ -49,6 +49,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Chart label geometry tests failed' }
           node scripts/test-dashboard-resize.js
           if ($LASTEXITCODE -ne 0) { throw 'Dashboard UX and edge resize tests failed' }
+          node scripts/test-report-designer.js
+          if ($LASTEXITCODE -ne 0) { throw 'Report Designer authoring and offline export tests failed' }
+          node scripts/test-report-interactions.js
+          if ($LASTEXITCODE -ne 0) { throw 'Report mouse, sections and lifecycle tests failed' }
+          python scripts/test-report-eml.py
+          if ($LASTEXITCODE -ne 0) { throw 'Report draft MIME tests failed' }
       - name: Build previous and current P2 packages
         run: |
           $baseline = Get-Content -Raw dev/ci/upgrade-baseline.json | ConvertFrom-Json

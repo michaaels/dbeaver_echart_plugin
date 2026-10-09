@@ -1,6 +1,6 @@
-# DBeaver ECharts Presentation — 0.5.0
+# DBeaver ECharts Presentation — 0.6.0
 
-An independent DBeaver Community plugin for result charts and saved dashboards,
+An independent DBeaver Community plugin for result charts, saved dashboards and visual reports,
 backed by Apache ECharts.
 The codebase is organized as a normal Eclipse PDE plugin and keeps DBeaver APIs,
 data conversion, chart construction and dashboards in separate modules.
@@ -20,6 +20,9 @@ data conversion, chart construction and dashboards in separate modules.
 - Dashboard JSON import/export.
 - Session SQL review, isolated query contexts, configurable timeout and Stop controls.
 - Preferences, background snapshots, copy/export integration and compatibility smoke tests.
+- Visual Report Designer: sections, texts, local images, charts, KPIs and SQL tables; move/resize from all borders, align, copy and undo.
+- Reusable report JSON/SQL templates, independent/shared queries and typed JDBC parameters.
+- Self-contained interactive HTML, static email HTML and reviewed EML drafts with CID images and an optional HTML attachment.
 
 The browser frontend is fully local. It has no CDN, telemetry or runtime network dependency.
 
@@ -50,6 +53,7 @@ Important boundaries:
 - `analytics.js` contains pure chart-option builders.
 - `dashboard.js` owns the versioned dashboard model and view rendering.
 - `widget-editor.js` owns detached widget drafts, preview data and chart configuration.
+- The [Report Designer modules and usage guide](docs/REPORT-DESIGNER.md) separate template definitions, runtime data, rendering and email drafts.
 
 ## Development baseline
 

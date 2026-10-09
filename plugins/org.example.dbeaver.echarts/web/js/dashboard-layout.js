@@ -15,9 +15,9 @@
       ? Math.max(min, Math.min(max, Math.round(number))) : fallback;
   }
 
-  function normalizeLayout(value) {
-    const width = integer(value?.width, integer(value?.columnSpan, 1, 1, 2) * 6, MIN_WIDTH, COLUMNS);
-    const height = integer(value?.height, integer(value?.rowSpan, 1, 1, 2) * 8, MIN_HEIGHT, MAX_HEIGHT);
+  function normalizeLayout(value, bounds = {}) {
+    const width = integer(value?.width, integer(value?.columnSpan, 1, 1, 2) * 6, bounds.minWidth ?? MIN_WIDTH, COLUMNS);
+    const height = integer(value?.height, integer(value?.rowSpan, 1, 1, 2) * 8, bounds.minHeight ?? MIN_HEIGHT, bounds.maxHeight ?? MAX_HEIGHT);
     return {
       x: integer(value?.x, null, 0, COLUMNS - width),
       y: integer(value?.y, null, 0, MAX_ROWS - height),
@@ -47,32 +47,33 @@
     throw new Error('Dashboard has no space for this widget.');
   }
 
-  function placeWidgets(widgets, priorityId) {
+  function placeWidgets(widgets, priorityId, bounds) {
     const occupied = [];
     const priority = widgets.find(widget => widget.id === priorityId);
     const ordered = priority ? [priority, ...widgets.filter(widget => widget !== priority)] : widgets;
     for (const widget of ordered) {
-      widget.layout = findSpace(normalizeLayout(widget.layout), occupied);
+      widget.layout = findSpace(normalizeLayout(widget.layout, bounds), occupied);
       occupied.push(widget.layout);
     }
     return widgets;
   }
 
-  function changeLayout(widgets, id, layout) {
+  function changeLayout(widgets, id, layout, bounds) {
     const widget = widgets.find(item => item.id === id);
     if (!widget) return;
-    widget.layout = normalizeLayout(layout);
-    placeWidgets(widgets, id);
+    widget.layout = normalizeLayout(layout, bounds);
+    placeWidgets(widgets, id, bounds);
   }
 
-  function resizeLayout(initial, edge, dx, dy) {
+  function resizeLayout(initial, edge, dx, dy, bounds = {}) {
+    const minWidth = bounds.minWidth ?? MIN_WIDTH, minHeight = bounds.minHeight ?? MIN_HEIGHT, maxHeight = bounds.maxHeight ?? MAX_HEIGHT;
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
     let left = initial.x, right = initial.x + initial.width;
     let top = initial.y, bottom = initial.y + initial.height;
-    if (edge.includes('w')) left = clamp(left + dx, Math.max(0, right - COLUMNS), right - MIN_WIDTH);
-    if (edge.includes('e')) right = clamp(right + dx, left + MIN_WIDTH, COLUMNS);
-    if (edge.includes('n')) top = clamp(top + dy, Math.max(0, bottom - MAX_HEIGHT), bottom - MIN_HEIGHT);
-    if (edge.includes('s')) bottom = clamp(bottom + dy, top + MIN_HEIGHT, Math.min(MAX_ROWS, top + MAX_HEIGHT));
+    if (edge.includes('w')) left = clamp(left + dx, Math.max(0, right - COLUMNS), right - minWidth);
+    if (edge.includes('e')) right = clamp(right + dx, left + minWidth, COLUMNS);
+    if (edge.includes('n')) top = clamp(top + dy, Math.max(0, bottom - maxHeight), bottom - minHeight);
+    if (edge.includes('s')) bottom = clamp(bottom + dy, top + minHeight, Math.min(MAX_ROWS, top + maxHeight));
     return { x: left, y: top, width: right - left, height: bottom - top };
   }
 

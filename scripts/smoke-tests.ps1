@@ -102,12 +102,16 @@ if ($DBeaverPlugins) {
             & javac -encoding UTF-8 --release 21 -cp (Join-Path $DBeaverPlugins '*') -d $CompileDir $Sources
             if ($LASTEXITCODE -ne 0) { throw 'Java sources do not compile against the supplied DBeaver target' }
             Write-Host 'Java source compatibility OK: supplied DBeaver target'
-            & javac -encoding UTF-8 --release 21 -cp ($CompileDir + ';' + (Join-Path $DBeaverPlugins '*')) -d $CompileDir 'scripts\tests\DashboardFilesTest.java' 'scripts\tests\DashboardQueryControlsTest.java'
+            & javac -encoding UTF-8 --release 21 -cp ($CompileDir + ';' + (Join-Path $DBeaverPlugins '*')) -d $CompileDir 'scripts\tests\DashboardFilesTest.java' 'scripts\tests\DashboardQueryControlsTest.java' 'scripts\tests\ReportFilesTest.java' 'scripts\tests\ReportParametersTest.java'
             if ($LASTEXITCODE -ne 0) { throw 'Dashboard file tests failed to compile' }
             & java -cp ($CompileDir + ';' + (Join-Path $DBeaverPlugins '*')) org.example.dbeaver.echarts.DashboardFilesTest
             if ($LASTEXITCODE -ne 0) { throw 'Dashboard file tests failed' }
             & java -cp ($CompileDir + ';' + (Join-Path $DBeaverPlugins '*')) org.example.dbeaver.echarts.DashboardQueryControlsTest
             if ($LASTEXITCODE -ne 0) { throw 'Dashboard query controls failed' }
+            & java -cp ($CompileDir + ';' + (Join-Path $DBeaverPlugins '*')) org.example.dbeaver.echarts.ReportFilesTest
+            if ($LASTEXITCODE -ne 0) { throw 'Report file tests failed' }
+            & java -cp ($CompileDir + ';' + (Join-Path $DBeaverPlugins '*')) org.example.dbeaver.echarts.ReportParametersTest
+            if ($LASTEXITCODE -ne 0) { throw 'Report parameter tests failed' }
         } finally {
             $resolved = (Resolve-Path -LiteralPath $CompileDir).Path
             $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'

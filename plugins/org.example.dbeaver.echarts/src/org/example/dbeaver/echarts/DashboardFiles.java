@@ -109,7 +109,7 @@ final class DashboardFiles {
         atomicWrite(file, json);
     }
 
-    private static void atomicWrite(Path file, String text) throws IOException {
+    static void atomicWrite(Path file, String text) throws IOException {
         Path target = file.toAbsolutePath().normalize();
         Path temporary = Files.createTempFile(target.getParent(), ".echarts-", ".tmp");
         try {
