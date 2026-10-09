@@ -75,6 +75,7 @@
       runReviewedQueries: $('runReviewedQueries'),
       cancelQueryReview: $('cancelQueryReview'),
       dashboardTitle: $('dashboardTitle'),
+      dashboardSummary: $('dashboardSummary'),
       empty: $('empty'),
       status: $('status'),
       chartType: $('chartType'),
@@ -111,6 +112,32 @@
     els.dashboardTitle.addEventListener('input', () => {
       state.dashboard.title = els.dashboardTitle.value;
       schedulePersistConfiguration();
+    });
+    const popovers = [...document.querySelectorAll('.toolbar-popover')];
+    const closePopovers = except => popovers.forEach(popover => { if (popover !== except) popover.open = false; });
+    const positionPopover = popover => {
+      if (!popover.open) return;
+      const panel = popover.querySelector('.popover-panel');
+      panel.style.transform = '';
+      const box = panel.getBoundingClientRect();
+      const shift = box.left < 12 ? 12 - box.left : Math.min(0, window.innerWidth - 12 - box.right);
+      panel.style.transform = `translateX(${shift}px)`;
+    };
+    popovers.forEach(popover => {
+      popover.addEventListener('toggle', () => positionPopover(popover));
+      popover.querySelector('summary').addEventListener('click', () => closePopovers(popover));
+      popover.addEventListener('click', event => {
+        if (event.target.closest('.file-actions button')) closePopovers();
+      });
+    });
+    window.addEventListener('resize', () => popovers.forEach(positionPopover));
+    document.addEventListener('pointerdown', event => {
+      if (!event.target.closest?.('.toolbar-popover')) closePopovers();
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key !== 'Escape') return;
+      const open = popovers.find(popover => popover.open);
+      if (open) { closePopovers(); open.querySelector('summary').focus(); }
     });
 
     els.chartType.addEventListener('change', () => updateConfiguration(() => {
@@ -291,6 +318,8 @@
     state.theme = { ...DEFAULT_THEME, ...(theme || {}) };
     window.DBeaverWidgetEditor.setAppearance(state.theme, state.renderer);
     const root = document.documentElement;
+    root.style.colorScheme = state.theme.dark ? 'dark' : 'light';
+    document.body.classList.toggle('dark-theme', state.theme.dark);
     root.style.setProperty('--bg', state.theme.background);
     root.style.setProperty('--fg', state.theme.foreground);
     root.style.setProperty('--muted', state.theme.muted);
@@ -428,6 +457,7 @@
 
   function render() {
     const dashboardMode = state.viewMode === 'dashboard';
+    document.body.classList.toggle('dashboard-mode', dashboardMode);
     els.chartView.hidden = dashboardMode;
     els.dashboardView.hidden = !dashboardMode;
     els.dashboardActions.hidden = !dashboardMode;
@@ -483,6 +513,9 @@
   function renderDashboard() {
     reconcileQuerySources();
     els.dashboardTitle.value = state.dashboard.title;
+    const count = state.dashboard.widgets.length;
+    els.dashboardSummary.textContent = `${count} ${count === 1 ? 'widget' : 'widgets'}`;
+    els.clearFilters.disabled = !Object.keys(state.dashboard.filters).length;
     disposeChart();
     window.DBeaverEChartsDashboard.render({
       root: els.dashboardGrid,
@@ -890,6 +923,9 @@
   function updateDashboardStatus() {
     const waiting = state.dashboard.widgets.filter(widget => widget.source.kind === 'savedQuery' && widget.source.sql && !isApproved(widget)).length;
     const running = state.widgetRequests.size;
+    els.reviewDashboardSql.classList.toggle('needs-review', waiting > 0);
+    els.reviewDashboardSql.title = waiting ? `${waiting} widget queries need review before they can run` : 'Review the SQL and connections for this dashboard';
+    els.status.dataset.state = running ? 'running' : waiting ? 'review' : state.pausedWidgets.size ? 'paused' : 'ready';
     els.stopDashboard.disabled = !running && !state.dashboard.widgets.some(widget => widget.refreshPolicy.mode === 'interval' && isApproved(widget) && !state.pausedWidgets.has(widget.id));
     els.status.textContent = running ? `${running} queries running` : waiting ? `${waiting} queries awaiting SQL review` : state.pausedWidgets.size ? 'Queries paused' : 'Dashboard ready';
   }

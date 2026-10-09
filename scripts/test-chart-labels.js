@@ -18,9 +18,9 @@ async function main() {
     page.on('pageerror', error => errors.push(error.message));
     for (const renderer of ['canvas', 'svg']) {
       for (const dark of [false, true]) {
-        for (const chartType of ['line', 'bar']) {
+        for (const [chartType, dashboard] of [['line', false], ['bar', false], ['line', true], ['bar', true]]) {
           for (const width of [320, 600, 920]) {
-            const result = await page.evaluate(({ renderer, dark, width, chartType }) => {
+            const result = await page.evaluate(({ renderer, dark, width, chartType, dashboard }) => {
               const element = document.getElementById('chart');
               window.echarts.getInstanceByDom(element)?.dispose();
               element.style.width = width + 'px';
@@ -37,7 +37,7 @@ async function main() {
               const option = window.DBeaverEChartsAnalytics.buildOption({
                 columns: [{ name: 'fecha', kind: 'DATETIME' }, { name: 'ventas', kind: 'NUMERIC' }, { name: 'costos', kind: 'NUMERIC' }],
                 rows, rowCount: rows.length, xIndex: 0, yIndices: [1, 2], yAxes: { 1: 'left', 2: 'right' },
-                chartType, marks: {}, theme
+                chartType, dashboard, marks: {}, theme
               });
               option.animation = false;
               chart.setOption(option);
@@ -64,8 +64,8 @@ async function main() {
                 tickCollisions: xLabels.flatMap((a, index) => xLabels.slice(index + 1)
                   .filter(b => overlap(a.rectangle, b.rectangle)).map(b => [a.text, b.text]))
               };
-            }, { renderer, dark, width, chartType });
-            const scenario = `${chartType}, ${renderer}, ${dark ? 'dark' : 'light'}, ${width}px`;
+            }, { renderer, dark, width, chartType, dashboard });
+            const scenario = `${dashboard ? 'dashboard' : 'chart'}, ${chartType}, ${renderer}, ${dark ? 'dark' : 'light'}, ${width}px`;
             assert.equal(result.legendCount, 2, scenario);
             assert.deepEqual(result.collisions, [], `Legend/axis name collision: ${scenario}`);
             assert.deepEqual(result.tickCollisions, [], `Date tick collision: ${scenario}`);
@@ -77,7 +77,7 @@ async function main() {
     fs.mkdirSync(path.dirname(screenshot), { recursive: true });
     await page.screenshot({ path: screenshot });
     assert.deepEqual(errors, []);
-    console.log('Chart label layout tests OK: line/bar, Canvas/SVG, light/dark, 320/600/920px, dual axes and 90 dates');
+    console.log('Chart label layout tests OK: standalone/dashboard line/bar, Canvas/SVG, light/dark, 320/600/920px, dual axes and 90 dates');
   } finally { await browser.close(); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

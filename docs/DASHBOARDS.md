@@ -20,7 +20,7 @@ El mismo formato incluye los mapas y sus columnas de longitud, latitud y valor.
      Control.echarts-dashboard.sql
    ```
 
-5. Usa **Open dashboard** para abrir el JSON en su propio editor. Los JSON con
+5. Usa **Files → Open dashboard** para abrir el JSON en su propio editor. Los JSON con
    el marcador de ECharts también tienen un editor y un manejador registrados
    para el navegador de ficheros de DBeaver. La conexión debe estar conectada;
    el archivo se abre con sus consultas detenidas. Pulsa **Review SQL**, revisa
@@ -29,7 +29,7 @@ El mismo formato incluye los mapas y sus columnas de longitud, latitud y valor.
 6. En ese editor, **Save dashboard** o **Ctrl+S** actualiza ambos archivos.
    Los cambios pendientes aparecen como modificaciones del editor.
 
-**Import** carga el documento en la vista actual; **Export** guarda el mismo
+En **Files**, **Import** carga el documento en la vista actual; **Export** guarda el mismo
 formato en otra ubicación, también con su copia SQL. El editor independiente
 permite añadir gráficos y cambiar SQL/conexión, tipo, columnas, series, ejes,
 actualización, filtros, título y renderer sin depender de una pestaña de resultados.
@@ -92,8 +92,9 @@ Usa permisos de lectura en la base de datos para dashboards de control.
 ## Mover y redimensionar widgets
 
 Arrastra el botón **⠿** o el espacio de la cabecera para mover un widget. Para
-cambiar su ancho y alto, mantén pulsada la esquina inferior derecha **◢** y
-arrastra el ratón. El gráfico se adapta durante el redimensionado y el contorno
+cambiar su ancho y alto, arrastra cualquiera de sus cuatro bordes o sus cuatro
+esquinas. El cursor indica la dirección; el borde contrario mantiene su posición.
+El gráfico se adapta durante el redimensionado y el contorno
 indica dónde quedará. Al soltar, los widgets que se crucen se recolocan sin
 solaparse. **Escape** cancela el gesto. El área se desplaza al acercar el ratón
 a sus bordes durante un arrastre.

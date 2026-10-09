@@ -9,14 +9,14 @@
 <body>
   <main class="app-shell">
     <section class="toolbar" aria-label="Chart controls">
-      <label>
+      <label class="view-control">
         <span>View</span>
         <select id="viewMode">
           <option value="chart">Chart</option>
           <option value="dashboard">Dashboard</option>
         </select>
       </label>
-      <label>
+      <label class="chart-control">
         <span>Chart</span>
         <select id="chartType">
           <option value="line">Line</option>
@@ -33,19 +33,19 @@
           <option value="map">Map</option>
         </select>
       </label>
-      <label>
+      <label class="chart-control">
         <span>X / category</span>
         <select id="xField"></select>
       </label>
-      <label>
+      <label class="chart-control">
         <span>Y / value</span>
         <select id="yField"></select>
       </label>
-      <details id="seriesPicker" class="toolbar-popover">
+      <details id="seriesPicker" class="toolbar-popover chart-control">
         <summary><span>Series</span><strong id="seriesCount">1</strong></summary>
         <div id="seriesOptions" class="popover-panel" aria-label="Y series and axes"></div>
       </details>
-      <details class="toolbar-popover">
+      <details class="toolbar-popover chart-control">
         <summary><span>Analysis</span></summary>
         <div class="popover-panel analysis-options">
           <label><input id="markLine" type="checkbox"> Mean line</label>
@@ -53,25 +53,38 @@
           <label><input id="visualMap" type="checkbox"> Visual scale</label>
         </div>
       </details>
-      <label>
-        <span>Renderer</span>
-        <select id="renderer">
-          <option value="canvas">Canvas</option>
-          <option value="svg">SVG</option>
-        </select>
-      </label>
       <div id="dashboardActions" class="dashboard-actions" hidden>
-        <input id="dashboardTitle" type="text" maxlength="200" aria-label="Dashboard title" placeholder="Dashboard title">
-        <button id="addWidget" type="button">Add widget</button>
-        <button id="clearFilters" type="button">Clear filters</button>
-        <button id="importDashboard" type="button">Import</button>
-        <button id="exportDashboard" type="button">Export</button>
-        <button id="saveDashboard" type="button">Save dashboard</button>
-        <button id="openDashboard" type="button">Open dashboard</button>
-        <button id="refreshDashboard" type="button">Refresh all</button>
-        <button id="reviewDashboardSql" type="button">Review SQL</button>
-        <button id="stopDashboard" type="button" disabled>Stop queries</button>
+        <div class="dashboard-heading">
+          <input id="dashboardTitle" type="text" maxlength="200" aria-label="Dashboard title" title="Edit dashboard title" placeholder="Dashboard title">
+          <span id="dashboardSummary" class="dashboard-summary"></span>
+        </div>
+        <div class="dashboard-commandbar" role="group" aria-label="Dashboard actions">
+          <button id="addWidget" class="primary-action" type="button">+ Add widget</button>
+          <button id="saveDashboard" type="button">Save dashboard</button>
+          <span class="command-divider" aria-hidden="true"></span>
+          <button id="refreshDashboard" type="button">Refresh all</button>
+          <button id="reviewDashboardSql" type="button">Review SQL</button>
+          <button id="stopDashboard" type="button" disabled>Stop queries</button>
+          <button id="clearFilters" type="button">Clear filters</button>
+          <details id="dashboardFiles" class="toolbar-popover dashboard-files">
+            <summary>Files <span aria-hidden="true">⌄</span></summary>
+            <div class="popover-panel file-actions">
+              <button id="openDashboard" type="button">Open dashboard…</button>
+              <button id="importDashboard" type="button">Import dashboard…</button>
+              <button id="exportDashboard" type="button">Export dashboard…</button>
+            </div>
+          </details>
+        </div>
       </div>
+      <details id="displayOptions" class="toolbar-popover display-options">
+        <summary>Display <span aria-hidden="true">⌄</span></summary>
+        <div class="popover-panel">
+          <label><span>Renderer</span><select id="renderer">
+            <option value="canvas">Canvas</option>
+            <option value="svg">SVG</option>
+          </select></label>
+        </div>
+      </details>
       <span id="status" role="status"></span>
     </section>
 

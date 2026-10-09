@@ -131,7 +131,7 @@
     renderFilters(filterRoot, dashboard, onChange);
     if (!dashboard.widgets.length) {
       empty.hidden = false;
-      empty.textContent = 'Add a widget from the current chart configuration.';
+      empty.textContent = 'Your dashboard is empty. Choose Add widget to create a chart with its own query.';
       return;
     }
     empty.hidden = true;
@@ -172,41 +172,48 @@
 
   function addLayoutControls(root, element, header, widget, dashboard, onChange) {
     const move = header.querySelector('.widget-drag-handle');
-    const resize = document.createElement('button');
-    resize.type = 'button';
-    resize.className = 'widget-resize-handle';
-    resize.textContent = '◢';
-    resize.title = 'Drag corner to resize; arrow keys resize the widget';
-    resize.setAttribute('aria-label', `Resize ${widget.title}`);
-    element.appendChild(resize);
+    const edges = { se: 'bottom right corner', e: 'right edge', s: 'bottom edge', w: 'left edge', n: 'top edge', ne: 'top right corner', sw: 'bottom left corner', nw: 'top left corner' };
+    const controls = [[move, 'move', '']];
+    for (const [edge, label] of Object.entries(edges)) {
+      const resize = document.createElement('button');
+      resize.type = 'button';
+      resize.className = `widget-resize-handle resize-${edge}`;
+      resize.dataset.resizeEdge = edge;
+      resize.tabIndex = edge === 'se' ? 0 : -1;
+      resize.title = `Drag ${label} to resize; Escape cancels`;
+      resize.setAttribute('aria-label', `Resize ${widget.title} from ${label}`);
+      if (edge === 'se') resize.setAttribute('aria-description', 'Use arrow keys to resize. Drag any edge or corner with the mouse.');
+      resize.addEventListener('pointerdown', event => {
+        startLayoutGesture(event, 'resize', root, element, resize, widget, dashboard, onChange, edge);
+      });
+      element.appendChild(resize);
+      controls.push([resize, 'resize', edge]);
+    }
     header.addEventListener('pointerdown', event => {
       if (event.target.closest('.widget-title, button:not(.widget-drag-handle)')) return;
       startLayoutGesture(event, 'move', root, element, header, widget, dashboard, onChange);
     });
-    resize.addEventListener('pointerdown', event => {
-      startLayoutGesture(event, 'resize', root, element, resize, widget, dashboard, onChange);
-    });
-    for (const [handle, mode] of [[move, 'move'], [resize, 'resize']]) {
+    for (const [handle, mode, edge] of controls) {
       handle.addEventListener('keydown', event => {
         const delta = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key];
         if (!delta || activeGesture) return;
         event.preventDefault();
-        const layout = proposedLayout(widget.layout, mode, delta[0], delta[1]);
+        const layout = proposedLayout(widget.layout, mode, delta[0], delta[1], edge);
         layoutEngine.changeLayout(dashboard.widgets, widget.id, layout);
         onChange();
         const updated = [...root.children].find(child => child.dataset.widgetId === widget.id);
-        updated?.querySelector(`.widget-${mode === 'move' ? 'drag' : 'resize'}-handle`)?.focus();
+        updated?.querySelector(mode === 'move' ? '.widget-drag-handle' : `[data-resize-edge="${edge}"]`)?.focus();
       });
     }
   }
 
-  function proposedLayout(initial, mode, dx, dy) {
-    return layoutEngine.normalizeLayout(mode === 'move'
-      ? { ...initial, x: initial.x + dx, y: initial.y + dy }
-      : { ...initial, width: Math.min(layoutEngine.COLUMNS - initial.x, initial.width + dx), height: initial.height + dy });
+  function proposedLayout(initial, mode, dx, dy, edge = 'se') {
+    return mode === 'move'
+      ? layoutEngine.normalizeLayout({ ...initial, x: initial.x + dx, y: initial.y + dy })
+      : layoutEngine.resizeLayout(initial, edge, dx, dy);
   }
 
-  function startLayoutGesture(event, mode, root, element, handle, widget, dashboard, onChange) {
+  function startLayoutGesture(event, mode, root, element, handle, widget, dashboard, onChange, edge = 'se') {
     if (activeGesture || (event.button ?? 0) !== 0 || event.isPrimary === false) return;
     event.preventDefault();
     const initial = { ...widget.layout };
@@ -226,6 +233,8 @@
     root.appendChild(preview);
     element.classList.add('widget-layout-active');
     root.classList.add('dashboard-layout-active');
+    const previousCursor = root.style.cursor || '';
+    root.style.cursor = mode === 'move' ? 'grabbing' : ({ n: 'ns', s: 'ns', e: 'ew', w: 'ew', ne: 'nesw', sw: 'nesw', nw: 'nwse', se: 'nwse' }[edge] + '-resize');
     let candidate = initial, lastPointer = event, dragging = false;
     const scroll = root.closest('.dashboard-workspace');
     const matches = pointer => (pointer.pointerId ?? 0) === pointerId;
@@ -236,7 +245,7 @@
       const dx = Math.round((pointer.clientX - startX - current.left + origin.left) / pitchX);
       const dy = Math.round((pointer.clientY - startY - current.top + origin.top) / pitchY);
       const previous = candidate;
-      candidate = proposedLayout(initial, mode, dx, dy);
+      candidate = proposedLayout(initial, mode, dx, dy, edge);
       applyLayout(preview, candidate);
       if (mode === 'resize') {
         applyLayout(element, candidate);
@@ -266,6 +275,7 @@
       applyLayout(element, initial);
       element.classList.remove('widget-layout-active');
       root.classList.remove('dashboard-layout-active');
+      root.style.cursor = previousCursor;
       chartInstances.get(widget.id)?.resize();
       const changed = ['x', 'y', 'width', 'height'].some(key => candidate[key] !== initial[key]);
       if (commit && changed) {
@@ -327,11 +337,13 @@
     const source = document.createElement('span');
     source.className = 'widget-source';
     source.textContent = widget.source.connection || widget.source.name;
-    source.title = widget.source.sql || widget.source.name;
+    source.title = `Connection: ${widget.source.connection || widget.source.name}`;
 
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.textContent = '×';
+    remove.className = 'widget-remove';
+    remove.setAttribute('aria-label', `Remove ${widget.title}`);
     remove.title = 'Remove widget';
     remove.addEventListener('click', () => {
       dashboard.widgets = dashboard.widgets.filter(item => item.id !== widget.id);
@@ -353,6 +365,7 @@
     footer.className = 'widget-footer';
     const policy = document.createElement('select');
     policy.title = 'Refresh policy';
+    policy.setAttribute('aria-label', `Refresh policy for ${widget.title}`);
     policy.append(
       new Option('On result', 'onResult:0'),
       new Option('Manual', 'manual:0'),
@@ -452,6 +465,7 @@
       yIndices,
       yAxes,
       chartType: widget.chart.chartType,
+      dashboard: true,
       marks: widget.chart.marks,
       theme
     };
