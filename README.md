@@ -64,6 +64,11 @@ select **DBeaver ECharts Presentation**, accept the license and restart DBeaver.
 Eclipse is not needed to use the installed plugin. See the
 [installation and package build guide](docs/P2-UPDATE-SITE.md).
 
+The **P2 package** GitHub Actions workflow validates sources, builds the installer,
+and tests install/upgrade/uninstall/reinstall against a clean Windows DBeaver.
+Successful runs provide a downloadable P2 ZIP, checksum and lifecycle test report
+under **Actions → P2 package → Artifacts**.
+
 See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) before widening the supported range.
 Production release as an independent plugin still has open requirements;
 see [the readiness review](docs/PRODUCTION-READINESS.md).

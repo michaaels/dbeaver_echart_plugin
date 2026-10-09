@@ -99,17 +99,20 @@ if ($DBeaverPlugins) {
         try {
             $Sources = Get-ChildItem -LiteralPath 'plugins\org.example.dbeaver.echarts\src' -Recurse -Filter '*.java' |
                 ForEach-Object FullName
-            & javac -encoding UTF-8 -source 21 -target 21 -cp (Join-Path $DBeaverPlugins '*') -d $CompileDir $Sources
+            & javac -encoding UTF-8 --release 21 -cp (Join-Path $DBeaverPlugins '*') -d $CompileDir $Sources
             if ($LASTEXITCODE -ne 0) { throw 'Java sources do not compile against the supplied DBeaver target' }
             Write-Host 'Java source compatibility OK: supplied DBeaver target'
-            & javac -encoding UTF-8 -source 21 -target 21 -cp ($CompileDir + ';' + (Join-Path $DBeaverPlugins '*')) -d $CompileDir 'scripts\tests\DashboardFilesTest.java' 'scripts\tests\DashboardQueryControlsTest.java'
+            & javac -encoding UTF-8 --release 21 -cp ($CompileDir + ';' + (Join-Path $DBeaverPlugins '*')) -d $CompileDir 'scripts\tests\DashboardFilesTest.java' 'scripts\tests\DashboardQueryControlsTest.java'
             if ($LASTEXITCODE -ne 0) { throw 'Dashboard file tests failed to compile' }
             & java -cp ($CompileDir + ';' + (Join-Path $DBeaverPlugins '*')) org.example.dbeaver.echarts.DashboardFilesTest
             if ($LASTEXITCODE -ne 0) { throw 'Dashboard file tests failed' }
             & java -cp ($CompileDir + ';' + (Join-Path $DBeaverPlugins '*')) org.example.dbeaver.echarts.DashboardQueryControlsTest
             if ($LASTEXITCODE -ne 0) { throw 'Dashboard query controls failed' }
         } finally {
-            Remove-Item -LiteralPath $CompileDir -Recurse -Force -ErrorAction SilentlyContinue
+            $resolved = (Resolve-Path -LiteralPath $CompileDir).Path
+            $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'
+            if (!$resolved.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase)) { throw "Refusing cleanup outside temporary directory: $resolved" }
+            Remove-Item -LiteralPath $resolved -Recurse -Force -ErrorAction SilentlyContinue
         }
     } else {
         Write-Host 'SKIP: javac is not installed; target source compile was not run'
