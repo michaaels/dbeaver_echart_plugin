@@ -127,6 +127,7 @@
     return rows;
   }
   register('table', { label: 'SQL table', icon: '▦', render(body, widget, snapshot, context) {
+    body.append(node('h3', widget.title, 'report-widget-title'));
     if (!requireData(body, snapshot)) return;
     const columns = tableColumns(widget, snapshot), rows = sortedRows(widget, snapshot);
     if (!columns.length) { body.append(node('p', 'Select table columns in Properties.', 'report-placeholder')); return; }

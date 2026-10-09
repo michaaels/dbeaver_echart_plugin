@@ -167,6 +167,7 @@ async function main() {
     assert.ok(!/\bsrc=["'](?:https?:)?\/\//i.test(html), 'Offline HTML must not load CDN resources');
     const staticHtml = exported.find(item => item.kind === 'email').content;
     assert.ok(!/<script|<canvas|display:\s*grid/i.test(staticHtml));
+    assert.match(staticHtml, /Data table/); assert.match(staticHtml, /Ventas y costos diarios/);
     assert.match(staticHtml, /data:image\/png;base64/);
     const eml = exported.find(item => item.kind === 'eml').content;
     assert.match(eml, /X-Unsent: 1\r\n/); assert.match(eml, /Content-ID: <image-/); assert.match(eml, /filename="report.html"/);
