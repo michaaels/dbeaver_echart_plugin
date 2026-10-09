@@ -125,7 +125,12 @@
     };
     popovers.forEach(popover => {
       popover.addEventListener('toggle', () => positionPopover(popover));
-      popover.querySelector('summary').addEventListener('click', () => closePopovers(popover));
+      popover.querySelector('summary').addEventListener('click', event => {
+        event.preventDefault();
+        closePopovers(popover);
+        popover.open = !popover.open;
+        positionPopover(popover);
+      });
       popover.addEventListener('click', event => {
         if (event.target.closest('.file-actions button')) closePopovers();
       });

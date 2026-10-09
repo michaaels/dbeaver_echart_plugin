@@ -128,7 +128,7 @@ async function main() {
         }
         await page.locator('#dashboardFiles > summary').click();
         const panel = await page.locator('#dashboardFiles .popover-panel').boundingBox();
-        assert.ok(panel.x >= 0 && panel.x + panel.width <= width, `Files menu fits ${width}px`);
+        assert.ok(panel.x >= 0 && panel.x + panel.width <= width, `Files menu fits ${width}px: ${JSON.stringify(panel)}`);
         await page.locator('#displayOptions > summary').click();
         assert.equal(await page.locator('#dashboardFiles').evaluate(element => element.open), false, 'Only one menu stays open');
         await page.keyboard.press('Escape');
