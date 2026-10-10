@@ -46,6 +46,8 @@ if ($Node) {
     if ($LASTEXITCODE -ne 0) { throw 'Dashboard schema tests failed' }
     & node 'scripts\test-dashboard-layout.js'
     if ($LASTEXITCODE -ne 0) { throw 'Dashboard layout tests failed' }
+    & node 'scripts\test-report-model.js'
+    if ($LASTEXITCODE -ne 0) { throw 'Report model/execution/export tests failed' }
     if (Test-Path -LiteralPath '.dev\browser-tests\node_modules\linkedom') {
         & node 'scripts\test-dashboard-bridge.js'
         if ($LASTEXITCODE -ne 0) { throw 'Dashboard DOM/bridge tests failed' }

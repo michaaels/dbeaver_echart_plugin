@@ -2,7 +2,7 @@
 <feature
       id="org.example.dbeaver.echarts.feature"
       label="DBeaver ECharts Presentation"
-      version="0.5.0.qualifier"
+      version="0.6.0.qualifier"
       provider-name="Example">
 
    <description>

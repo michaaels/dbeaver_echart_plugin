@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-python - "${DBEAVER_PLUGINS:-}" <<'PY'
+python3 - "${DBEAVER_PLUGINS:-}" <<'PY'
 import re
 import os
 import shutil
@@ -90,7 +90,7 @@ if plugins:
                 check=True,
             )
             classpath = os.pathsep.join((output, str(plugins / '*')))
-            tests = ['DashboardFilesTest', 'DashboardQueryControlsTest']
+            tests = ['DocumentFilesTest', 'DashboardFilesTest', 'DashboardQueryControlsTest', 'ReportFilesTest', 'ReportParametersTest', 'BrowserNavigationTest']
             subprocess.run([javac, '-encoding', 'UTF-8', '-source', '21', '-target', '21', '-cp', classpath,
                             '-d', output, *[f'scripts/tests/{test}.java' for test in tests]], check=True)
             for test in tests:

@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-python - <<'PY'
+python3 - <<'PY'
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -40,6 +40,7 @@ if command -v node >/dev/null 2>&1; then
   node scripts/test-analytics.js
   node scripts/test-dashboard.js
   node scripts/test-dashboard-layout.js
+  node scripts/test-report-model.js
   if [[ -d .dev/browser-tests/node_modules/linkedom ]]; then
     node scripts/test-dashboard-bridge.js
   else

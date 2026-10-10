@@ -1,11 +1,35 @@
 # Revisión de producción del plugin independiente
 
-Fecha de revisión: 2026-10-09. Estado: beta funcional; todavía no certificada
+Fecha de revisión: 2026-10-10. Estado: beta funcional; todavía no certificada
 para producción. Esta revisión identifica lo observado en el código y las
 pruebas disponibles; no sustituye una auditoría completa.
 
 El proyecto continuará como plugin independiente. La integración en el repositorio
 principal de DBeaver queda fuera del alcance de esta entrega.
+
+## Entrega 0.6.0 beta
+
+La primera publicación es una beta instalable sin firma. Incluye Report Designer,
+plantillas con parámetros JDBC, HTML offline y borradores EML. Las capturas y el
+procedimiento de instalación están en el README; las notas están en `CHANGELOG.md`.
+
+Además de los controles descritos abajo, ahora hay pruebas de instalación del
+mismo P2 en Windows y Linux, suites Edge/Chromium/WebKit y escenarios nativos en
+DBeaver con SQL, tablas paginadas, reorganización al arrastrar y vista previa de
+correo. En Debian 13 se verificaron cinco escenarios SWT/WebKit con consultas
+SQLite reales y EML con diez filas visibles y dos imágenes CID. Ubuntu WSL también
+ejecuta la validación Java/formatos. El puente JavaScript se despacha mediante
+`asyncExec` para evitar reentradas en WebKit.
+
+La persistencia común ahora está en `DocumentFiles`; pruebas específicas verifican
+colisiones con SQL existente, limpieza tras fallo de escritura y conservación de
+configuración de tablas al guardar/reabrir. Cada archivo se escribe atómicamente;
+el par JSON/SQL sigue sin ser una transacción.
+
+Estas evidencias amplían la revisión inicial. No cierran la certificación completa
+de cancelación/desconexión por driver, rendimiento, accesibilidad, macOS ni el
+renderizado y edición en clientes Outlook reales. Los criterios siguientes siguen
+siendo la referencia antes de declarar una versión estable.
 
 ## Controles de ejecución implementados
 

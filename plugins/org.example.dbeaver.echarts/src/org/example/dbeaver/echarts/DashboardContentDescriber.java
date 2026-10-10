@@ -17,7 +17,7 @@ public final class DashboardContentDescriber implements IContentDescriber {
         if (bytes.length > DashboardFiles.MAX_BYTES) return INVALID;
         try {
             var document = JsonParser.parseString(new String(bytes, StandardCharsets.UTF_8)).getAsJsonObject();
-            return DashboardFiles.FORMAT.equals(DashboardFiles.string(document, "format")) ? VALID : INVALID;
+            return DashboardFiles.FORMAT.equals(JsonFields.string(document, "format")) ? VALID : INVALID;
         } catch (RuntimeException ignored) { return INVALID; }
     }
 

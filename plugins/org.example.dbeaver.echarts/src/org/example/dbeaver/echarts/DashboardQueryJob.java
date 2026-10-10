@@ -41,6 +41,7 @@ final class DashboardQueryJob extends AbstractJob {
     private final int timeoutSeconds;
     private final Consumer<String> onSuccess;
     private final Consumer<Exception> onFailure;
+    private final List<ReportParameters.Binding> parameters;
 
     DashboardQueryJob(
         java.util.function.Supplier<DBCExecutionContext> context,
@@ -51,6 +52,12 @@ final class DashboardQueryJob extends AbstractJob {
         Consumer<String> onSuccess,
         Consumer<Exception> onFailure
     ) {
+        this(context, sql, maxRows, maxCells, timeoutSeconds, onSuccess, onFailure, List.of());
+    }
+
+    DashboardQueryJob(java.util.function.Supplier<DBCExecutionContext> context, String sql, int maxRows, int maxCells,
+                      int timeoutSeconds, Consumer<String> onSuccess, Consumer<Exception> onFailure,
+                      List<ReportParameters.Binding> parameters) {
         super("Refresh ECharts dashboard widget");
         this.context = context;
         this.sql = sql;
@@ -59,6 +66,7 @@ final class DashboardQueryJob extends AbstractJob {
         this.timeoutSeconds = Math.max(1, Math.min(3600, timeoutSeconds));
         this.onSuccess = onSuccess;
         this.onFailure = onFailure;
+        this.parameters = List.copyOf(parameters);
         setSystem(true);
         setPriority(SHORT);
         setJobGroup(QUERIES);
@@ -139,7 +147,7 @@ final class DashboardQueryJob extends AbstractJob {
         try (
             DBCExecutionContext isolated = openContext(monitor);
             DBCSession session = isolated.openSession(monitor, DBCExecutionPurpose.USER, "ECharts dashboard widget");
-            DBCStatement statement = session.prepareStatement(DBCStatementType.QUERY, sql, false, false, false)
+            DBCStatement statement = prepare(session)
         ) {
             activeStatement.set(statement);
             checkCancelled(monitor);
@@ -165,6 +173,19 @@ final class DashboardQueryJob extends AbstractJob {
                 return JsonWriter.write(snapshot(attributes, rows, effectiveMaxRows));
             }
         }
+    }
+
+    private DBCStatement prepare(DBCSession session) throws Exception {
+        if (parameters.isEmpty()) return session.prepareStatement(DBCStatementType.QUERY, sql, false, false, false);
+        if (!(session instanceof java.sql.Connection connection)) {
+            throw new IllegalStateException("Typed report parameters require a JDBC connection.");
+        }
+        java.sql.PreparedStatement prepared = connection.prepareStatement(sql);
+        try {
+            if (!(prepared instanceof DBCStatement bounded)) throw new IllegalStateException("The JDBC driver does not expose bounded report statements.");
+            for (int i = 0; i < parameters.size(); i++) parameters.get(i).bind(prepared, i + 1);
+            return bounded;
+        } catch (Exception error) { prepared.close(); throw error; }
     }
 
     private Map<String, Object> snapshot(

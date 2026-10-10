@@ -2,17 +2,28 @@
 <?eclipse version="3.4"?>
 <plugin>
    <extension point="org.eclipse.core.contenttype.contentTypes">
+      <content-type id="org.example.dbeaver.echarts.report" name="ECharts report template"
+            base-type="org.eclipse.core.runtime.text" file-extensions="json" priority="high" default-charset="UTF-8"
+            describer="org.example.dbeaver.echarts.ReportContentDescriber"/>
       <content-type id="org.example.dbeaver.echarts.dashboard" name="ECharts dashboard"
             base-type="org.eclipse.core.runtime.text" file-extensions="json" priority="high" default-charset="UTF-8"
             describer="org.example.dbeaver.echarts.DashboardContentDescriber"/>
    </extension>
    <extension point="org.eclipse.ui.editors">
+      <editor id="org.example.dbeaver.echarts.reportEditor" name="Report Designer"
+            class="org.example.dbeaver.echarts.ReportEditor" icon="web/assets/echarts-icon.png" default="true">
+         <contentTypeBinding contentTypeId="org.example.dbeaver.echarts.report"/>
+      </editor>
       <editor id="org.example.dbeaver.echarts.dashboardEditor" name="ECharts dashboard"
             class="org.example.dbeaver.echarts.DashboardEditor" icon="web/assets/echarts-icon.png" default="true">
          <contentTypeBinding contentTypeId="org.example.dbeaver.echarts.dashboard"/>
       </editor>
    </extension>
    <extension point="org.jkiss.dbeaver.resourceType">
+      <type id="echarts-report" name="Report templates" icon="web/assets/echarts-icon.png" folderIcon="web/assets/echarts-icon.png" managable="true">
+         <root folder="Reports/ECharts"/>
+         <contentTypeBinding contentTypeId="org.example.dbeaver.echarts.report"/>
+      </type>
       <type id="echarts-dashboard" name="ECharts dashboard" icon="web/assets/echarts-icon.png"
             folderIcon="web/assets/echarts-icon.png" managable="true">
          <root folder="Dashboards/ECharts"/>
@@ -20,7 +31,13 @@
       </type>
    </extension>
    <extension point="org.jkiss.dbeaver.resourceHandler">
+      <handler type="echarts-report" class="org.example.dbeaver.echarts.ReportResourceHandler"/>
       <handler type="echarts-dashboard" class="org.example.dbeaver.echarts.DashboardResourceHandler"/>
+   </extension>
+   <extension point="org.eclipse.ui.views">
+      <category id="org.example.dbeaver.echarts.views" name="ECharts"/>
+      <view id="org.example.dbeaver.echarts.reportDesigner" name="Report Designer" category="org.example.dbeaver.echarts.views"
+            class="org.example.dbeaver.echarts.ReportDesignerView" icon="web/assets/echarts-icon.png" restorable="true"/>
    </extension>
    <extension point="org.jkiss.dbeaver.resultset.presentation">
       <!-- Keep the optional chart presentation after DBeaver's built-in views. -->

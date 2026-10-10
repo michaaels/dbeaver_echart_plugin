@@ -3,11 +3,11 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { chromium } = require('../.dev/browser-tests/node_modules/playwright');
+const { launchBrowser } = require('./browser-test-runtime');
 const root = path.resolve(__dirname, '..');
 
 async function main() {
-  const browser = await chromium.launch({ channel: 'msedge', headless: true });
+  const browser = await launchBrowser();
   try {
     const page = await browser.newPage({ viewport: { width: 1100, height: 700 } });
     await page.setContent('<div id="chart"></div>');

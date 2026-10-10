@@ -1,0 +1,92 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const window = {};
+const context = vm.createContext({ window, console, TextEncoder, btoa: text => Buffer.from(text, 'binary').toString('base64') });
+const web = path.resolve(__dirname, '../plugins/org.example.dbeaver.echarts/web');
+for (const file of ['dashboard-layout', 'report-model', 'report-execution', 'report-export']) vm.runInContext(fs.readFileSync(path.join(web, 'js', file + '.js'), 'utf8'), context);
+const M = window.DBeaverReportModel, E = window.DBeaverReportExecution, X = window.DBeaverReportExport;
+const report = M.create('Indicadores de red');
+report.parameters.push({ name: 'start_date', label: 'Start date', type: 'date', default: '2026-10-01' });
+const source = M.source({ id: 'daily', name: 'Daily', sql: 'SELECT fecha, total FROM daily WHERE fecha >= :start_date', connectionId: 'local', password: 'secret', rows: [[1]] });
+report.sources.push(source);
+const chart = M.widget('chart'); chart.sourceId = source.id; chart.config.chart.xColumn = 'fecha'; chart.config.chart.yColumns = ['total']; report.widgets.push(chart);
+const clean = M.normalize({ ...report, snapshots: { daily: [[1]] }, password: 'secret' });
+assert.ok(!JSON.stringify(clean).includes('secret') && !('snapshots' in clean));
+assert.throws(() => M.normalize({ ...report, schemaVersion: 99 }), /Unsupported/);
+assert.throws(() => M.normalize({ ...report, sources: [source, source] }), /Duplicate/);
+assert.throws(() => M.normalize({ ...report, widgets: Array(65).fill(chart) }), /64 components/);
+const section = M.widget('section'); section.parentId = section.id;
+assert.throws(() => M.normalize({ ...report, widgets: [section] }), /cyclic/);
+assert.equal(M.image('data:image/svg+xml;base64,PHN2Zz4='), '');
+assert.equal(M.image('https://example.com/image.png'), '');
+assert.throws(() => M.runtimeSource(clean, source, { start_date: '2026-02-30' }), /date/);
+assert.throws(() => M.runtimeSource({ ...clean, parameters: [{ name: 'amount', label: 'Amount', type: 'number', default: '' }] }, source, { amount: 'NaN' }), /number/);
+assert.throws(() => M.runtimeSource({ ...clean, parameters: [{ name: 'enabled', label: 'Enabled', type: 'boolean', default: '' }] }, source, {}), /true or false/);
+assert.equal(M.runtimeSource(clean, source, {}).parameters.start_date.value, '2026-10-01');
+const imported = M.fromDashboard({ title: 'Existing', widgets: [{ id: 'existing', title: 'Daily totals', source, layout: { x: 0, y: 0, width: 6, height: 8 }, chart: { chartType: 'bar', xColumn: 'fecha', yColumns: ['total'], yAxes: { total: 'right' }, marks: { markLine: true } } }] });
+assert.equal(imported.sources[0].sql, source.sql); assert.equal(imported.widgets[0].config.chart.yAxes.total, 'right'); assert.equal(imported.widgets[0].config.chart.marks.markLine, true);
+const history = M.history(report);
+
+const flow = M.create('Two-column flow');
+function component(id, x, y, width, height, parentId = null) {
+  const widget = M.widget('text'); Object.assign(widget, { id, parentId, layout: { x, y, width, height } }); return widget;
+}
+flow.widgets = [component('title', 0, 8, 12, 2), component('left', 0, 13, 7, 5), component('right', 7, 13, 5, 8),
+  component('bottom', 0, 25, 12, 2), { ...component('section', 0, 30, 12, 12), type: 'section' },
+  component('child', 0, 5, 6, 2, 'section')];
+const original = M.normalize(flow);
+assert.equal(original.widgets[0].layout.y, 8, 'Opening a template preserves intentional whitespace');
+M.compact(flow.widgets, new Set([null]));
+assert.deepEqual(flow.widgets.map(w => w.layout.y), [0, 2, 2, 10, 12, 5], 'Delete compaction preserves aligned rows and only changes the affected section');
+assert.deepEqual(flow.widgets.map(w => [w.layout.x, w.layout.width, w.layout.height]), original.widgets.map(w => [w.layout.x, w.layout.width, w.layout.height]));
+M.compact(flow.widgets);
+assert.equal(flow.widgets.at(-1).layout.y, 0, 'Close gaps also compacts nested sections');
+const compacted = JSON.stringify(flow); M.compact(flow.widgets); assert.equal(JSON.stringify(flow), compacted, 'Compaction is stable');
+assert.deepEqual(Array.from(M.normalize(flow).widgets, w => w.layout.y), flow.widgets.map(w => w.layout.y), 'Compacted layout reopens without overlaps or displacement');
+history.change(draft => { draft.title = 'One'; }, 'title'); history.change(draft => { draft.title = 'Two'; }, 'title');
+history.undo(); assert.equal(history.get().title, report.title); history.redo(); assert.equal(history.get().title, 'Two');
+history.change(draft => { draft.description = 'New'; }); assert.equal(history.canRedo(), false);
+const bounded = M.history(report, 80, JSON.stringify(M.normalize(report)).length * 2 + 20);
+for (let i = 0; i < 10; i++) bounded.change(draft => { draft.title = String(i); });
+bounded.undo(); assert.equal(bounded.canUndo(), false, 'Undo memory budget bounds retained history');
+
+const executed = [], cancelled = [], approved = []; let updates = 0;
+const engine = E.create({ approve: json => { approved.push(JSON.parse(json)); return true; }, execute: (...args) => { executed.push(args); return true; }, cancel: id => cancelled.push(id), reset: () => {} }, () => updates++);
+const shared = M.clone(clean), second = M.clone(source); second.id = 'same-query'; shared.sources.push(second);
+const kpi = M.widget('kpi'); kpi.sourceId = second.id; kpi.config.column = 'total'; shared.widgets.push(kpi);
+engine.reconcile(shared, {});
+const review = engine.review(shared, {}); assert.equal(review.length, 1); assert.equal(review[0].sourceIds.length, 2);
+const tampered = M.clone(review); tampered[0].sql = 'SELECT wrong';
+assert.throws(() => engine.run(shared, {}, tampered), /changed/);
+engine.run(shared, {}, review); assert.equal(executed.length, 1); assert.equal(approved.length, 1);
+const snapshot = { schemaVersion: 1, columns: [{ name: 'fecha', kind: 'DATETIME', password: 'secret' }, { name: 'total', kind: 'NUMERIC' }], rows: [['2026-10-01', 12]], source: { sql: 'secret' } };
+engine.receive(review[0].id, snapshot);
+assert.strictEqual(engine.state().snapshots.daily, engine.state().snapshots['same-query']);
+assert.ok(!JSON.stringify(engine.state().snapshots).includes('secret')); engine.ready(shared);
+const formatted = M.clone(shared); formatted.widgets[0].style.fontSize = 24; engine.reconcile(formatted, {}); assert.equal(engine.state().snapshots.daily.rows.length, 1);
+const invalid = M.clone(shared); invalid.widgets[0].config.chart.yColumns = ['removed']; assert.throws(() => engine.ready(invalid), /numeric series/);
+const fresh = engine.review(shared, {}); engine.run(shared, {}, fresh); engine.receiveError(fresh[0].id, 'Connection lost');
+assert.throws(() => engine.ready(shared), /Connection lost/); assert.equal(engine.state().snapshots.daily.rows.length, 1, 'Error retains prior data');
+engine.reconcile(shared, { start_date: '2026-10-02' }); assert.equal(Object.keys(engine.state().snapshots).length, 0);
+assert.throws(() => engine.run(shared, { start_date: '2026-10-02' }, fresh), /changed/);
+const empty = engine.review(shared, { start_date: '2026-10-02' }); engine.run(shared, { start_date: '2026-10-02' }, empty); engine.receive(empty[0].id, { ...snapshot, rows: [] }); engine.ready(shared);
+const pending = engine.review(shared, { start_date: '2026-10-02' }); engine.run(shared, { start_date: '2026-10-02' }, pending); engine.stop();
+assert.ok(cancelled.includes(pending[0].id)); assert.equal(engine.receive(pending[0].id, snapshot), false); assert.throws(() => engine.ready(shared), /cancelled/);
+const many = M.create(); for (let i = 0; i < 6; i++) { many.sources.push(M.source({ id: 'q' + i, name: 'Q' + i, sql: 'SELECT ' + i, connectionId: 'local' })); const widget = M.widget('table'); widget.sourceId = 'q' + i; many.widgets.push(widget); }
+engine.reconcile(many, {}); const queued = engine.review(many, {}); const start = executed.length; engine.run(many, {}, queued);
+assert.equal(executed.length - start, 4); assert.equal(engine.state().pending, 2); engine.receive(queued[0].id, snapshot); assert.equal(executed.length - start, 5); engine.reset(); assert.equal(engine.state().running, 0);
+assert.ok(updates > 10);
+
+const malicious = M.clone(shared); malicious.title = '</title><script>window.evil=1</script>'; malicious.widgets[0].title = '</script><script>window.evil=1</script>';
+const html = X.interactive(malicious, { daily: snapshot }, { parameters: { text: '</script>' } }, { echarts: '/*echarts*/', widgets: '/*widgets*/', paperCss: 'body{}' });
+assert.ok(html.includes('&lt;/title&gt;') && !html.includes('<script>window.evil'));
+assert.ok(!html.includes(source.sql) && !html.includes('connectionId'));
+assert.throws(() => X.eml({ to: 'test@example.com\r\nBcc: stolen@example.com', cc: '', subject: 'Daily', message: '', html: '<body>Hello</body>', title: 'Daily' }), /line breaks/);
+assert.throws(() => X.eml({ to: 'test@example.com', cc: '', subject: 'Daily\r\nBcc: stolen@example.com', message: '', html: '<body>Hello</body>', title: 'Daily' }), /line breaks/);
+const eml = X.eml({ to: 'test@example.com', cc: '', subject: 'Indicadores de conexión 🚀'.repeat(6), message: '<img src=x onerror=alert(1)>', html: '<body>Hello</body>', attachment: '<html>Offline</html>', title: 'Report' });
+assert.match(eml, /X-Unsent: 1\r\n/); assert.match(eml, /Content-Disposition: attachment/);
+assert.ok(eml.split('\r\n').filter(line => line.includes('=?UTF-8?')).every(line => line.length <= 78));
+console.log('Report model/execution/export OK: schema, sections, imports, bounded undo, typed values, approval invalidation, deduplication, four-query queue, empty/error/cancel, snapshot isolation and HTML/MIME escaping');

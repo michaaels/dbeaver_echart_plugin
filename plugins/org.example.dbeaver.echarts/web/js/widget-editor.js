@@ -15,7 +15,11 @@
       'Type', 'Category', 'Refresh', 'Series', 'Mean', 'Range', 'Scale', 'Preview', 'Data', 'Save', 'Cancel']
       .map(name => [name, document.getElementById(`widgetEditor${name}`)]));
     elements.dialog = document.getElementById('widgetEditor');
-    for (const option of document.querySelectorAll('#chartType option')) elements.Type.appendChild(option.cloneNode(true));
+    window.DBeaverEChartsAnalytics.populateTypes(elements.Type);
+    const hint = document.createElement('p'); hint.id = 'widgetEditorHint'; hint.className = 'widget-editor-hint';
+    hint.setAttribute('role', 'status'); elements.Type.closest('.widget-editor-fields').after(hint);
+    elements.Type.setAttribute('aria-describedby', hint.id);
+    elements.Hint = hint;
     elements.Name.addEventListener('input', () => { session.draft.title = elements.Name.value.slice(0, 200); updateSave(); });
     elements.Sql.addEventListener('input', sourceChanged);
     elements.Connection.addEventListener('change', sourceChanged);
@@ -38,7 +42,7 @@
     elements.Cancel.addEventListener('click', close);
     elements.dialog.addEventListener('cancel', close);
     elements.Save.addEventListener('click', () => {
-      if (!validDraft()) return;
+      if (!validDraft() || session.chartError) return;
       try {
         session.hooks.save(JSON.parse(JSON.stringify(session.draft)), session.data,
           session.previewApproved && session.dataBinding === signature(session.draft.source));
@@ -178,6 +182,8 @@
   function renderFields() {
     const config = session.draft.chart;
     const isGauge = config.chartType === 'gauge';
+    const definition = window.DBeaverEChartsAnalytics.CHART_TYPES.find(type => type.id === config.chartType);
+    elements.Hint.textContent = definition?.hint || '';
     const columns = session.data?.columns || [
       ...(config.xColumn ? [{ name: config.xColumn, kind: 'STRING' }] : []),
       ...config.yColumns.map(name => ({ name, kind: 'NUMERIC' }))
@@ -212,14 +218,15 @@
       const axis = document.createElement('select');
       axis.setAttribute('aria-label', `Axis ${column.name}`);
       axis.append(new Option('Left', 'left'), new Option('Right', 'right'));
-      axis.value = config.yAxes[column.name] || 'left';
-      axis.disabled = !check.checked;
+      axis.value = definition?.singleAxis ? 'left' : config.yAxes[column.name] || 'left';
+      axis.disabled = !check.checked || definition?.singleAxis;
+      axis.title = definition?.singleAxis ? 'Stacked series share one axis.' : '';
       check.addEventListener('change', () => {
         if (check.checked && config.yColumns.length >= 12) {
           check.checked = false; showError('A chart supports up to 12 series.'); return;
         }
         config.yColumns = check.checked ? [...config.yColumns, column.name] : config.yColumns.filter(name => name !== column.name);
-        axis.disabled = !check.checked;
+        axis.disabled = !check.checked || definition?.singleAxis;
         renderPreview();
       });
       axis.addEventListener('change', () => { config.yAxes[column.name] = axis.value; renderPreview(); });
@@ -231,9 +238,10 @@
 
   function validDraft() {
     return Boolean(session && !session.loading && session.draft.title.trim() && session.draft.source.sql.trim()
-      && elements.Connection.value !== '' && session.draft.chart.xColumn && session.draft.chart.yColumns.length);
+      && elements.Connection.value !== '' && session.draft.chart.xColumn && session.draft.chart.yColumns.length
+      && (session.draft.chart.chartType !== 'map' || session.draft.chart.yColumns.length >= 2));
   }
-  function updateSave() { elements.Save.disabled = !validDraft(); }
+  function updateSave() { elements.Save.disabled = !validDraft() || session.chartError === true; }
   function setStatus(message) { elements.Status.textContent = message; }
   function showError(message) { elements.Error.hidden = !message; elements.Error.textContent = message || ''; }
 
@@ -260,6 +268,7 @@
   function renderPreview() {
     disposeChart();
     elements.Preview.replaceChildren();
+    session.chartError = false;
     updateSave();
     if (!session.data?.rows.length || !validDraft()) {
       elements.Preview.textContent = session.loading ? 'Loading preview...'
@@ -280,7 +289,7 @@
       chart.setOption(option, { notMerge: true, lazyUpdate: false });
       showError(null);
       if (typeof ResizeObserver === 'function') { observer = new ResizeObserver(() => chart?.resize()); observer.observe(elements.Preview); }
-    } catch (error) { disposeChart(); showError(error.message); }
+    } catch (error) { disposeChart(); session.chartError = true; showError(error.message); updateSave(); }
   }
 
   function close() {

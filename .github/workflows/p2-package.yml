@@ -47,8 +47,18 @@ jobs:
           ./scripts/validate.ps1 -DBeaverPlugins .dev/ci-target/dbeaver/dbeaver/plugins
           node scripts/test-chart-labels.js
           if ($LASTEXITCODE -ne 0) { throw 'Chart label geometry tests failed' }
+          node scripts/test-chart-catalog.js
+          if ($LASTEXITCODE -ne 0) { throw 'Chart catalog rendering and export tests failed' }
+          node scripts/test-dashboard-browser.js
+          if ($LASTEXITCODE -ne 0) { throw 'Dashboard authoring tests failed' }
           node scripts/test-dashboard-resize.js
           if ($LASTEXITCODE -ne 0) { throw 'Dashboard UX and edge resize tests failed' }
+          node scripts/test-report-designer.js
+          if ($LASTEXITCODE -ne 0) { throw 'Report Designer authoring and offline export tests failed' }
+          node scripts/test-report-interactions.js
+          if ($LASTEXITCODE -ne 0) { throw 'Report mouse, sections and lifecycle tests failed' }
+          python scripts/test-report-eml.py
+          if ($LASTEXITCODE -ne 0) { throw 'Report draft MIME tests failed' }
       - name: Build previous and current P2 packages
         run: |
           $baseline = Get-Content -Raw dev/ci/upgrade-baseline.json | ConvertFrom-Json
@@ -90,3 +100,55 @@ jobs:
             .dev/ci-installed/director-workspace/.metadata/.log
           if-no-files-found: ignore
           retention-days: 7
+
+  linux-package:
+    needs: windows-package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: dbeaver-echarts-p2-windows-${{ github.sha }}
+          path: .dev/linux-installer
+      - name: Prepare Linux DBeaver and browser dependencies
+        run: |
+          mkdir -p .dev/linux-target .dev/browser-tests
+          curl --fail --location --retry 3 https://dbeaver.io/files/26.2.2/dbeaver-ce-26.2.2-linux-x86_64.tar.gz -o .dev/linux-target/dbeaver.tar.gz
+          echo '27b39a79a69ec70f9f95c6ee3b68514fcc7677acef93287e8df8e13cc53384d5  .dev/linux-target/dbeaver.tar.gz' | sha256sum --check
+          tar -xzf .dev/linux-target/dbeaver.tar.gz -C .dev/linux-target
+          cp dev/ci/browser/package*.json .dev/browser-tests/
+          npm ci --prefix .dev/browser-tests --ignore-scripts --no-audit --no-fund
+          node .dev/browser-tests/node_modules/playwright/cli.js install --with-deps chromium webkit
+          sudo apt-get install -y libwebkit2gtk-4.1-0 xvfb
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
+      - name: Install the shared P2 artifact in Linux DBeaver
+        run: |
+          product="$PWD/.dev/linux-target/dbeaver"
+          archive=$(find .dev/linux-installer -name 'dbeaver-echarts-*.zip' -print -quit)
+          test -n "$archive"
+          unzip -q "$archive" -d .dev/linux-repository
+          launcher=$(find "$product/plugins" -name 'org.eclipse.equinox.launcher_*.jar' -print -quit)
+          "$product/jre/bin/java" --enable-native-access=ALL-UNNAMED -jar "$launcher" -nosplash -consoleLog -install "$product" -configuration "$product/configuration" -data "$PWD/.dev/linux-director-workspace" -eclipse.keyring "$PWD/.dev/linux-keyring" -application org.eclipse.equinox.p2.director -repository "file:$PWD/.dev/linux-repository" -installIU org.example.dbeaver.echarts.feature.feature.group
+      - name: Validate Linux APIs, Chromium, WebKit and the installed registry
+        shell: bash
+        run: bash scripts/test-linux.sh "$PWD/.dev/linux-target/dbeaver" 2>&1 | tee .dev/linux-tests.log
+      - name: Upload Linux test evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dbeaver-echarts-linux-tests-${{ github.sha }}
+          include-hidden-files: true
+          path: |
+            .dev/linux-tests.log
+            .dev/screenshots/
+            .dev/reports/
+            .dev/registry-test-*/configuration/*.log
+          if-no-files-found: ignore
+          retention-days: 14

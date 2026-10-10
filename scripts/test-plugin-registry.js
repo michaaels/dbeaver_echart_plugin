@@ -9,11 +9,15 @@ const pdeOutput = cliArgs.includes('--pde-output');
 const installed = cliArgs.includes('--installed');
 if (installed && pdeOutput) throw new Error('Choose --installed or --pde-output');
 const home = path.resolve(cliArgs.find(value => !value.startsWith('--')) || path.join(root, '.dev/dbeaver-26.2.2/dbeaver'));
-const compilerHome = process.env.ECHARTS_COMPILER_JDK || process.env.ECHARTS_RUNTIME_JDK || 'C:/Program Files/Java/jdk-26.0.1';
+const executableSuffix = process.platform === 'win32' ? '.exe' : '';
+const compilerHome = process.env.ECHARTS_COMPILER_JDK || process.env.ECHARTS_RUNTIME_JDK || process.env.JAVA_HOME || (process.platform === 'win32' ? 'C:/Program Files/Java/jdk-26.0.1' : null);
 const bundledRuntime = path.join(home, 'jre');
-const javaHome = process.env.ECHARTS_RUNTIME_JDK || (installed && fs.existsSync(path.join(bundledRuntime, 'bin/java.exe')) ? bundledRuntime : compilerHome);
-const java = name => path.join(javaHome, 'bin', name + '.exe');
-const compiler = name => path.join(compilerHome, 'bin', name + '.exe');
+const javaHome = process.env.ECHARTS_RUNTIME_JDK || (installed && fs.existsSync(path.join(bundledRuntime, 'bin/java' + executableSuffix)) ? bundledRuntime : compilerHome);
+const binary = (home, name) => home ? path.join(home, 'bin', name + executableSuffix) : name + executableSuffix;
+const java = name => binary(javaHome, name);
+const compiler = name => binary(compilerHome, name);
+const operationTimeout = Number(process.env.ECHARTS_TEST_TIMEOUT_MS || 60000);
+if (!Number.isSafeInteger(operationTimeout) || operationTimeout < 1) throw new Error('ECHARTS_TEST_TIMEOUT_MS must be a positive integer');
 const output = path.join(root, '.dev/registry-test-' + Date.now());
 const classes = pdeOutput ? path.join(root, 'plugins/org.example.dbeaver.echarts/bin') : path.join(output, 'classes');
 fs.mkdirSync(output, { recursive: true });
@@ -36,7 +40,7 @@ fs.writeFileSync(info, fs.readFileSync(path.join(home, 'configuration/org.eclips
     return fields.join(',');
   }).join('\n'));
 function run(command, args) {
-  const result = cp.spawnSync(command, args, { cwd: root, encoding: 'utf8', timeout: 60000 });
+  const result = cp.spawnSync(command, args, { cwd: root, encoding: 'utf8', timeout: operationTimeout });
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
   if (result.error) throw result.error;

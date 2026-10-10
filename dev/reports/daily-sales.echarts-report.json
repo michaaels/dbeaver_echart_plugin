@@ -1,0 +1,442 @@
+{
+  "format": "dbeaver-echarts-report",
+  "schemaVersion": 1,
+  "title": "Reporte diario de ventas",
+  "description": "Example using echarts_test_sales. Select your own DBeaver connection in Data before running. No data or credentials are stored in this template.",
+  "category": "Sales",
+  "defaultTemplate": false,
+  "page": {
+    "width": 960,
+    "margin": 24,
+    "gap": 8,
+    "background": "#ffffff",
+    "grid": true
+  },
+  "parameters": [
+    {
+      "name": "start_date",
+      "label": "start_date",
+      "type": "date",
+      "default": "2026-07-01"
+    }
+  ],
+  "sources": [
+    {
+      "id": "daily-sales",
+      "name": "Ventas diarias",
+      "kind": "savedQuery",
+      "project": "",
+      "connection": "",
+      "connectionId": "",
+      "sql": "SELECT fecha, ROUND(SUM(ventas),2) AS ventas, ROUND(SUM(costos),2) AS costos\nFROM echarts_test_sales\nWHERE fecha >= :start_date\nGROUP BY fecha ORDER BY fecha;",
+      "maxRows": 5000
+    }
+  ],
+  "widgets": [
+    {
+      "id": "sales-heading",
+      "type": "heading",
+      "title": "Report title",
+      "parentId": null,
+      "sourceId": "",
+      "layout": {
+        "x": 0,
+        "y": 0,
+        "width": 9,
+        "height": 2
+      },
+      "style": {
+        "color": "#243447",
+        "background": "transparent",
+        "borderColor": "#d5dce3",
+        "borderWidth": 0,
+        "padding": 12,
+        "fontSize": 28,
+        "fontFamily": "Segoe UI",
+        "align": "left"
+      },
+      "config": {
+        "text": "Ventas · {{start_date}}",
+        "image": "",
+        "alt": "",
+        "column": "",
+        "aggregate": "sum",
+        "numberFormat": "number",
+        "decimals": 2,
+        "prefix": "",
+        "suffix": "",
+        "columns": [],
+        "totals": false,
+        "groupBy": "",
+        "pageSize": 20,
+        "sortColumn": "",
+        "sortDirection": "asc",
+        "chart": {
+          "chartType": "line",
+          "xColumn": null,
+          "yColumns": [],
+          "yAxes": {},
+          "marks": {
+            "markLine": false,
+            "markArea": false,
+            "visualMap": false
+          },
+          "colors": [],
+          "legend": true
+        },
+        "visibility": {
+          "enabled": false,
+          "column": "",
+          "operator": "notEmpty",
+          "value": ""
+        }
+      }
+    },
+    {
+      "id": "sales-image",
+      "type": "image",
+      "title": "Logo",
+      "parentId": null,
+      "sourceId": "",
+      "layout": {
+        "x": 10,
+        "y": 0,
+        "width": 2,
+        "height": 2
+      },
+      "style": {
+        "color": "#243447",
+        "background": "transparent",
+        "borderColor": "#d5dce3",
+        "borderWidth": 0,
+        "padding": 12,
+        "fontSize": 14,
+        "fontFamily": "Segoe UI",
+        "align": "left"
+      },
+      "config": {
+        "text": "",
+        "image": "data:image/png;base64,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",
+        "alt": "",
+        "column": "",
+        "aggregate": "sum",
+        "numberFormat": "number",
+        "decimals": 2,
+        "prefix": "",
+        "suffix": "",
+        "columns": [],
+        "totals": false,
+        "groupBy": "",
+        "pageSize": 20,
+        "sortColumn": "",
+        "sortDirection": "asc",
+        "chart": {
+          "chartType": "line",
+          "xColumn": null,
+          "yColumns": [],
+          "yAxes": {},
+          "marks": {
+            "markLine": false,
+            "markArea": false,
+            "visualMap": false
+          },
+          "colors": [],
+          "legend": true
+        },
+        "visibility": {
+          "enabled": false,
+          "column": "",
+          "operator": "notEmpty",
+          "value": ""
+        }
+      }
+    },
+    {
+      "id": "sales-chart",
+      "type": "chart",
+      "title": "Ventas y costos diarios",
+      "parentId": null,
+      "sourceId": "daily-sales",
+      "layout": {
+        "x": 0,
+        "y": 5,
+        "width": 7,
+        "height": 20
+      },
+      "style": {
+        "color": "#243447",
+        "background": "transparent",
+        "borderColor": "#d5dce3",
+        "borderWidth": 0,
+        "padding": 12,
+        "fontSize": 14,
+        "fontFamily": "Segoe UI",
+        "align": "left"
+      },
+      "config": {
+        "text": "",
+        "image": "",
+        "alt": "",
+        "column": "",
+        "aggregate": "sum",
+        "numberFormat": "number",
+        "decimals": 2,
+        "prefix": "",
+        "suffix": "",
+        "columns": [],
+        "totals": false,
+        "groupBy": "",
+        "pageSize": 20,
+        "sortColumn": "",
+        "sortDirection": "asc",
+        "chart": {
+          "chartType": "line",
+          "xColumn": "fecha",
+          "yColumns": [
+            "ventas",
+            "costos"
+          ],
+          "yAxes": {
+            "costos": "right"
+          },
+          "marks": {
+            "markLine": false,
+            "markArea": false,
+            "visualMap": false
+          },
+          "colors": [],
+          "legend": true
+        },
+        "visibility": {
+          "enabled": false,
+          "column": "",
+          "operator": "notEmpty",
+          "value": ""
+        }
+      }
+    },
+    {
+      "id": "sales-kpi",
+      "type": "kpi",
+      "title": "Ventas acumuladas",
+      "parentId": null,
+      "sourceId": "daily-sales",
+      "layout": {
+        "x": 0,
+        "y": 2,
+        "width": 12,
+        "height": 3
+      },
+      "style": {
+        "color": "#243447",
+        "background": "transparent",
+        "borderColor": "#d5dce3",
+        "borderWidth": 0,
+        "padding": 12,
+        "fontSize": 14,
+        "fontFamily": "Segoe UI",
+        "align": "left"
+      },
+      "config": {
+        "text": "",
+        "image": "",
+        "alt": "",
+        "column": "ventas",
+        "aggregate": "sum",
+        "numberFormat": "number",
+        "decimals": 2,
+        "prefix": "",
+        "suffix": "",
+        "columns": [],
+        "totals": false,
+        "groupBy": "",
+        "pageSize": 20,
+        "sortColumn": "",
+        "sortDirection": "asc",
+        "chart": {
+          "chartType": "line",
+          "xColumn": null,
+          "yColumns": [],
+          "yAxes": {},
+          "marks": {
+            "markLine": false,
+            "markArea": false,
+            "visualMap": false
+          },
+          "colors": [],
+          "legend": true
+        },
+        "visibility": {
+          "enabled": false,
+          "column": "",
+          "operator": "notEmpty",
+          "value": ""
+        }
+      }
+    },
+    {
+      "id": "sales-table",
+      "type": "table",
+      "title": "Data table",
+      "parentId": null,
+      "sourceId": "daily-sales",
+      "layout": {
+        "x": 7,
+        "y": 5,
+        "width": 5,
+        "height": 20
+      },
+      "style": {
+        "color": "#243447",
+        "background": "transparent",
+        "borderColor": "#d5dce3",
+        "borderWidth": 0,
+        "padding": 12,
+        "fontSize": 14,
+        "fontFamily": "Segoe UI",
+        "align": "left"
+      },
+      "config": {
+        "text": "",
+        "image": "",
+        "alt": "",
+        "column": "",
+        "aggregate": "sum",
+        "numberFormat": "number",
+        "decimals": 2,
+        "prefix": "",
+        "suffix": "",
+        "columns": [
+          {
+            "name": "fecha",
+            "label": "fecha",
+            "format": "date",
+            "width": 0,
+            "align": "left",
+            "total": false,
+            "rule": {
+              "enabled": false,
+              "operator": "gt",
+              "value": 0,
+              "color": "#b42318",
+              "background": "#fff2ef"
+            }
+          },
+          {
+            "name": "ventas",
+            "label": "Ventas",
+            "format": "number",
+            "width": 0,
+            "align": "right",
+            "total": true,
+            "rule": {
+              "enabled": true,
+              "operator": "gt",
+              "value": 1500,
+              "color": "#b42318",
+              "background": "#fff2ef"
+            }
+          },
+          {
+            "name": "costos",
+            "label": "costos",
+            "format": "number",
+            "width": 0,
+            "align": "right",
+            "total": true,
+            "rule": {
+              "enabled": false,
+              "operator": "gt",
+              "value": 0,
+              "color": "#b42318",
+              "background": "#fff2ef"
+            }
+          }
+        ],
+        "totals": true,
+        "groupBy": "",
+        "pageSize": 20,
+        "sortColumn": "",
+        "sortDirection": "asc",
+        "chart": {
+          "chartType": "line",
+          "xColumn": null,
+          "yColumns": [],
+          "yAxes": {},
+          "marks": {
+            "markLine": false,
+            "markArea": false,
+            "visualMap": false
+          },
+          "colors": [],
+          "legend": true
+        },
+        "visibility": {
+          "enabled": false,
+          "column": "ventas",
+          "operator": "gt",
+          "value": "999999"
+        }
+      }
+    },
+    {
+      "id": "sales-date",
+      "type": "date",
+      "title": "Generated date",
+      "parentId": null,
+      "sourceId": "",
+      "layout": {
+        "x": 0,
+        "y": 25,
+        "width": 12,
+        "height": 1
+      },
+      "style": {
+        "color": "#243447",
+        "background": "transparent",
+        "borderColor": "#d5dce3",
+        "borderWidth": 0,
+        "padding": 0,
+        "fontSize": 14,
+        "fontFamily": "Segoe UI",
+        "align": "left"
+      },
+      "config": {
+        "text": "",
+        "image": "",
+        "alt": "",
+        "column": "",
+        "aggregate": "sum",
+        "numberFormat": "number",
+        "decimals": 2,
+        "prefix": "",
+        "suffix": "",
+        "columns": [],
+        "totals": false,
+        "groupBy": "",
+        "pageSize": 20,
+        "sortColumn": "",
+        "sortDirection": "asc",
+        "chart": {
+          "chartType": "line",
+          "xColumn": null,
+          "yColumns": [],
+          "yAxes": {},
+          "marks": {
+            "markLine": false,
+            "markArea": false,
+            "visualMap": false
+          },
+          "colors": [],
+          "legend": true
+        },
+        "visibility": {
+          "enabled": false,
+          "column": "",
+          "operator": "notEmpty",
+          "value": ""
+        }
+      }
+    }
+  ]
+}

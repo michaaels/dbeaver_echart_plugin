@@ -73,8 +73,15 @@ foreach ($name in @('control-ventas.echarts-dashboard.json', 'control-ventas.ech
 }
 function Assert-Preserved {
     foreach ($file in $savedFiles.Keys) {
-        if ((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $savedFiles[$file]) { throw "Saved dashboard changed: $file" }
+        if ((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $savedFiles[$file]) { throw "Saved dashboard/report changed: $file" }
     }
+}
+$reportDirectory = Join-Path $workspace 'General/Reports/ECharts'
+New-Item -ItemType Directory -Force -Path $reportDirectory | Out-Null
+foreach ($name in @('daily-sales.echarts-report.json', 'daily-sales.echarts-report.sql')) {
+    $saved = Join-Path $reportDirectory $name
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot "../dev/reports/$name") -Destination $saved
+    $savedFiles[$saved] = (Get-FileHash -LiteralPath $saved -Algorithm SHA256).Hash
 }
 if ($previousFile) {
     Invoke-Director $previousFile @('-installIU', "$group/$($previous.version)", '-tag', 'echarts-previous')
@@ -95,6 +102,6 @@ Invoke-Director $repository @('-installIU', "$group/$($current.version)", '-tag'
 Assert-Installed $current.version
 Assert-Registry
 Assert-Preserved
-$summary = [ordered]@{ current = $current.version; previous = $(if ($previousFile) { $previous.version } else { $null }); installed = $true; upgraded = [bool]$previousFile; uninstalled = $true; reinstalled = $true; registry = $true; dashboardFilesPreserved = $true }
+$summary = [ordered]@{ current = $current.version; previous = $(if ($previousFile) { $previous.version } else { $null }); installed = $true; upgraded = [bool]$previousFile; uninstalled = $true; reinstalled = $true; registry = $true; dashboardFilesPreserved = $true; reportFilesPreserved = $true }
 $summary | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $destinationPath 'p2-test-result.json') -Encoding UTF8
 Write-Host "P2 lifecycle, installed registry/assets and dashboard preservation OK: $product"

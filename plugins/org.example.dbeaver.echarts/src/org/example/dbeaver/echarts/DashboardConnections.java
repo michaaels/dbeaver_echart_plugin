@@ -32,17 +32,17 @@ final class DashboardConnections {
     }
 
     static DBCExecutionContext resolve(JsonObject source, DBPProject fallbackProject) {
-        String projectName = DashboardFiles.string(source, "project");
+        String projectName = JsonFields.string(source, "project");
         DBPProject project = projectName.isBlank() ? fallbackProject
             : DBWorkbench.getPlatform().getWorkspace().getProject(projectName);
         if (project == null || !project.isOpen()) {
             throw new IllegalStateException("Dashboard project is unavailable. Choose a connection in Edit.");
         }
-        String id = DashboardFiles.string(source, "connectionId");
+        String id = JsonFields.string(source, "connectionId");
         DBPDataSourceContainer connection = id.isBlank() ? null : project.getDataSourceRegistry().getDataSource(id);
         // Legacy files only stored the name. Never silently substitute a different ID.
         if (id.isBlank()) {
-            String name = DashboardFiles.string(source, "connection");
+            String name = JsonFields.string(source, "connection");
             List<? extends DBPDataSourceContainer> candidates = project.getDataSourceRegistry().getDataSources().stream()
                 .filter(item -> item.getName().equals(name)).toList();
             if (candidates.size() == 1) connection = candidates.getFirst();

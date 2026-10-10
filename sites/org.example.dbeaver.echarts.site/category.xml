@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <site>
-   <feature url="features/org.example.dbeaver.echarts.feature_0.5.0.qualifier.jar"
+   <feature url="features/org.example.dbeaver.echarts.feature_0.6.0.qualifier.jar"
             id="org.example.dbeaver.echarts.feature"
-            version="0.5.0.qualifier">
+            version="0.6.0.qualifier">
       <category name="org.example.dbeaver.echarts.category"/>
    </feature>
    <category-def name="org.example.dbeaver.echarts.category"

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Report Designer</title>
+  <link rel="stylesheet" href="css/plugin.css"><link rel="stylesheet" href="css/report-paper.css"><link rel="stylesheet" href="css/report-designer.css">
+</head>
+<body class="report-designer">
+  <main class="report-app">
+    <header class="report-toolbar" aria-label="Report actions">
+      <div class="report-title-row"><strong>Report Designer</strong><input id="reportTitle" maxlength="200" aria-label="Report title"><span id="reportDirty" aria-live="polite"></span>
+        <label class="report-zoom">Zoom<select id="reportZoom"><option value="0.5">50%</option><option value="0.75">75%</option><option value="1" selected>100%</option><option value="1.25">125%</option></select></label>
+      </div>
+      <div class="report-actions">
+        <button id="newReport" type="button">New</button><button id="openReport" type="button">Open template</button><button id="saveReport" type="button" class="report-primary">Save</button>
+        <button id="undoReport" type="button" title="Ctrl+Z">Undo</button><button id="redoReport" type="button" title="Ctrl+Y">Redo</button>
+        <button id="compactReport" type="button" title="Close vertical gaps while keeping columns and sizes. Supports Undo.">Close gaps</button>
+        <button id="reportData" type="button">Data</button><button id="reportParameters" type="button">Parameters</button>
+        <button id="refreshReport" type="button">Refresh data</button><button id="stopReport" type="button" hidden>Stop queries</button>
+        <button id="previewReport" type="button">Preview</button><button id="generateReport" type="button">Generate report</button>
+        <button id="exportReport" type="button">Export HTML</button><button id="outlookReport" type="button">Outlook draft</button>
+        <button id="reportTemplates" type="button">Templates</button>
+      </div>
+      <div id="reportStatus" role="status">Add a component to start designing your report.</div>
+    </header>
+    <div class="report-workspace">
+      <aside class="report-library" aria-label="Component library"><h2>Components</h2><p>Click to append. Drag onto the sheet to choose a position. Select a section to add inside it.</p><div id="componentLibrary"></div>
+        <h2>Layers</h2><div id="reportLayers"></div><button id="duplicateReport" type="button">Duplicate template</button><button id="importReport" type="button">Import template</button>
+      </aside>
+      <section class="report-canvas-scroll" aria-label="Report design canvas"><div id="reportStage" class="report-stage"><div id="reportCanvas"></div></div>
+        <div id="reportEmpty" class="report-empty">Your report is empty.<br>Add a heading, then charts, KPIs and tables.</div>
+      </section>
+      <aside class="report-properties" aria-label="Component properties"><h2 id="propertiesHeading">Report properties</h2><div id="componentProperties"></div></aside>
+    </div>
+  </main>
+  <dialog id="reportDataDialog" class="report-dialog" aria-labelledby="reportDataHeading"><h2 id="reportDataHeading">Report queries</h2>
+    <p>Reuse one query for several components. Named values such as <code>:start_date</code> are JDBC parameters.</p>
+    <div class="report-source-layout"><div><div id="reportSourceList"></div><button id="addReportSource" type="button">Add query</button></div>
+      <div id="reportSourceForm"></div></div><footer><button data-close="reportDataDialog" type="button">Done</button></footer>
+  </dialog>
+  <dialog id="reportParameterDialog" class="report-dialog" aria-labelledby="reportParameterHeading"><h2 id="reportParameterHeading">Parameters</h2>
+    <p>Define reusable values for queries and text fields such as <code>{{start_date}}</code>. Current values are used for generation.</p>
+    <div id="reportParameterList"></div><button id="addReportParameter" type="button">Add parameter</button><footer><button data-close="reportParameterDialog" type="button">Done</button></footer>
+  </dialog>
+  <dialog id="reportReviewDialog" class="report-dialog" aria-labelledby="reportReviewHeading"><h2 id="reportReviewHeading">Review report queries</h2>
+    <p>Check SQL, connections and parameter values. Identical queries run once and share their results. Opening a template never runs SQL.</p>
+    <div id="reportReviewQueries"></div><footer><button id="runReportQueries" type="button" class="report-primary">Run queries</button><button data-close="reportReviewDialog" type="button">Cancel</button></footer>
+  </dialog>
+  <dialog id="reportPreviewDialog" class="report-preview-dialog" aria-labelledby="reportPreviewHeading"><header><h2 id="reportPreviewHeading">Report preview</h2><button data-close="reportPreviewDialog" type="button">Close</button></header>
+    <div id="reportPreviewStatus"></div><div id="reportPreviewCanvas"></div>
+  </dialog>
+  <dialog id="reportExportDialog" class="report-dialog small" aria-labelledby="reportExportHeading"><h2 id="reportExportHeading">Export report</h2>
+    <label>Format<select id="reportExportFormat"><option value="interactive">Interactive HTML (offline)</option><option value="email">Static HTML (email layout)</option><option value="template">Template definition (JSON and SQL)</option></select></label>
+    <p>HTML contains a snapshot of the current data. It does not reconnect to the database.</p><footer><button id="saveReportExport" type="button" class="report-primary">Export</button><button data-close="reportExportDialog" type="button">Cancel</button></footer>
+  </dialog>
+  <dialog id="reportEmailDialog" class="report-dialog email" aria-labelledby="reportEmailHeading"><h2 id="reportEmailHeading">Compose Outlook draft</h2>
+    <p>Creates an EML draft with inline chart images. The plugin does not send email. Editing the saved draft depends on your mail client.</p>
+    <div class="report-email-content">
+      <section class="report-email-fields" aria-label="Draft details">
+        <div class="report-form-grid"><label>To<input id="reportEmailTo" type="text" placeholder="name@example.com"></label><label>CC<input id="reportEmailCc" type="text"></label></div>
+        <label>Subject<input id="reportEmailSubject" maxlength="200"></label><label>Message<textarea id="reportEmailMessage" rows="3"></textarea></label>
+        <label class="report-check"><input id="reportEmailAttach" type="checkbox" checked> Attach offline interactive HTML</label>
+        <label class="report-check"><input id="reportEmailOpen" type="checkbox"> Open saved EML with the registered mail client</label>
+      </section>
+      <section class="report-email-preview" aria-labelledby="reportEmailPreviewHeading">
+        <h3 id="reportEmailPreviewHeading" class="report-email-preview-heading">Email preview <span>Charts are embedded as images</span></h3>
+        <iframe id="reportEmailPreview" title="Email report preview" sandbox="" referrerpolicy="no-referrer"></iframe>
+      </section>
+    </div>
+    <p id="reportEmailError" class="report-data-error" role="alert"></p>
+    <footer><button id="saveReportEmail" type="button" class="report-primary">Save email draft</button><button data-close="reportEmailDialog" type="button">Cancel</button></footer>
+  </dialog>
+  <dialog id="reportTemplateDialog" class="report-dialog" aria-labelledby="reportTemplateHeading"><h2 id="reportTemplateHeading">Reusable templates</h2>
+    <label>Search title or category<input id="reportTemplateSearch" type="search"></label><div id="reportTemplateList"></div>
+    <p>Saved templates live in Reports/ECharts. Use DBeaver's Files navigator to rename or delete them.</p><footer><button data-close="reportTemplateDialog" type="button">Close</button></footer>
+  </dialog>
+  <dialog id="reportConfirmDialog" class="report-dialog small" aria-labelledby="reportConfirmHeading"><h2 id="reportConfirmHeading">Discard unsaved changes?</h2><p>Save the template first to keep your design.</p>
+    <footer><button id="reportConfirmDiscard" type="button">Discard and continue</button><button data-close="reportConfirmDialog" type="button">Cancel</button></footer></dialog>
+  <select id="chartType" hidden aria-label="Available charts"></select>
+  <dialog id="widgetEditor" class="widget-editor" aria-labelledby="widgetEditorHeading">
+    <h2 id="widgetEditorHeading">Edit chart</h2><div class="widget-editor-fields"><label>Title<input id="widgetEditorName" maxlength="200"></label><label>Connection<select id="widgetEditorConnection"></select></label></div>
+    <label class="widget-editor-query">SQL for this chart<textarea id="widgetEditorSql" spellcheck="false" aria-label="Widget SQL"></textarea></label>
+    <div class="widget-editor-query-actions"><button id="widgetEditorRun" type="button">Run preview</button><button id="widgetEditorStop" type="button" disabled>Stop preview</button><span id="widgetEditorStatus" role="status"></span></div>
+    <p id="widgetEditorError" role="alert" hidden></p><div class="widget-editor-fields"><label>Chart<select id="widgetEditorType"></select></label><label>X / category<select id="widgetEditorCategory"></select></label>
+      <label>Refresh<select id="widgetEditorRefresh"><option value="manual:0">Manual</option></select></label></div>
+    <fieldset class="widget-editor-series"><legend>Y series and axes</legend><div id="widgetEditorSeries"></div></fieldset>
+    <div class="widget-editor-marks"><label><input id="widgetEditorMean" type="checkbox"> Mean line</label><label><input id="widgetEditorRange" type="checkbox"> Min/max area</label><label><input id="widgetEditorScale" type="checkbox"> Visual scale</label></div>
+    <div id="widgetEditorPreview" class="widget-editor-preview" aria-label="Chart preview"></div><div class="widget-editor-data"><table id="widgetEditorData" aria-label="Preview result rows"></table></div>
+    <div class="widget-editor-actions"><button id="widgetEditorSave" type="button">Apply chart</button><button id="widgetEditorCancel" type="button">Cancel</button></div>
+  </dialog>
+  <script src="js/echarts.min.js"></script><script src="js/world-map.js"></script><script src="js/analytics.js"></script><script src="js/dashboard-layout.js"></script>
+  <script src="js/widget-editor.js"></script><script src="js/report-model.js"></script><script src="js/report-widgets.js"></script><script src="js/report-execution.js"></script><script src="js/report-export.js"></script><script src="js/report-properties.js"></script><script src="js/report-designer.js"></script>
+</body></html>
