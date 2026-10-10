@@ -2,7 +2,9 @@
 
 | DBeaver Community | Java | OS | Status | Evidence |
 |---|---:|---|---|---|
-| 26.2.2 | Plugin bytecode 21; bundled runtime 25.0.4.1; development runtime 26 | Windows x86_64 | Compile, P2 install/upgrade and isolated registry verified; complete SWT runtime gate pending | P2 install/upgrade/uninstall/reinstall in a clean official distribution; exact bundle versions, registry/resources and JSON/SQL preservation checked; headless Edge chart/dashboard tests |
+| 26.2.2 | Plugin bytecode 21; bundled runtime 25.0.4.1; development runtime 26 | Windows x86_64 | Beta tested; full runtime certification pending | Clean P2 install/upgrade/uninstall/reinstall, registry/resources and JSON/SQL preservation; Edge browser suites; native DBeaver report, SQL and email-preview scenarios |
+| 26.2.2 | Plugin bytecode 21; compiler Java 21 | Linux x86_64 | Beta tested; full driver certification pending | Same P2 archive installed in Ubuntu CI; Chromium/WebKit suites; native SWT/WebKit and SQLite report/reflow/email checks on Debian 13; source validation in Ubuntu 24.04 WSL |
+| 26.2.2 | Plugin bytecode 21 | macOS | Not certified | Native installation and SWT tests pending |
 | 26.2.0 (2026-08-30) | 21 | Windows x86_64 | Compile verified; runtime release gate pending | Java target compile and compatibility smoke tests |
 | 26.1.x | 21 | Windows/Linux/macOS | Not certified | A separate target compile and runtime validation are required |
 | 26.0.x and older | 21 | Windows/Linux/macOS | Not certified | Run `scripts/smoke-tests` against the target installation |
@@ -21,5 +23,6 @@ compile-time smoke test and the runtime checklist pass.
 The packaged P2 lifecycle is tested separately with `scripts/test-p2-install.ps1`;
 `-PreviousRepositoryZip` enables an exact version upgrade test. GitHub Actions
 builds from the pinned toolchain and baseline documented in `P2-UPDATE-SITE.md`.
-The browser and isolated Equinox tests do not certify the SWT browser lifecycle
-or native dialogs. See [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md).
+Browser and isolated Equinox tests supplement the native scenarios; they do not
+certify every SWT lifecycle or dialog. The beta does not claim full driver or
+Outlook-client certification. See [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md).

@@ -1,83 +1,105 @@
-# DBeaver ECharts Presentation — 0.6.0
+# DBeaver ECharts — 0.6.0 beta
 
-An independent DBeaver Community plugin for result charts, saved dashboards and visual reports,
-backed by Apache ECharts.
-The codebase is organized as a normal Eclipse PDE plugin and keeps DBeaver APIs,
-data conversion, chart construction and dashboards in separate modules.
+Plugin independiente para **DBeaver Community**: convierte resultados SQL en gráficos,
+dashboards y reportes visuales con Apache ECharts. Eclipse se necesita para desarrollar,
+pero **no para instalar y utilizar el plugin**.
 
-## Capabilities
+## Descargar e instalar
 
-- Native ECharts interaction: tooltip, selection zoom, data zoom, restore and PNG download.
-- Line, area, bar, scatter, pie, gauge, radar, heatmap, boxplot, treemap and funnel charts.
-- Multiple Y series, dual axes, `visualMap`, `markLine` and `markArea`.
-- Canvas and SVG renderers with DBeaver theme synchronization.
-- Geographic scatter charts using a locally packaged world map.
-- Multi-widget dashboards with persisted JSON configuration.
-- Standalone widget authoring: SQL and connection per chart, query preview, columns, series and axes.
-- Active-result and independent read-only SQL sources per widget.
-- Manual, result-driven and interval refresh policies.
-- Shared filters, cross-filter events and drill-down.
-- Dashboard JSON import/export.
-- Session SQL review, isolated query contexts, configurable timeout and Stop controls.
-- Preferences, background snapshots, copy/export integration and compatibility smoke tests.
-- Visual Report Designer: sections, texts, local images, charts, KPIs and SQL tables; move/resize from all borders, align, copy and undo.
-- Reusable report JSON/SQL templates, independent/shared queries and typed JDBC parameters.
-- Self-contained interactive HTML, static email HTML and reviewed EML drafts with CID images and an optional HTML attachment.
+Descarga el ZIP P2 y su checksum en el [release 0.6.0 beta](https://github.com/michaaels/dbeaver_echart_plugin/releases/tag/v0.6.0-beta.1).
 
-The browser frontend is fully local. It has no CDN, telemetry or runtime network dependency.
+1. En DBeaver, abre **Help / Ayuda → Install New Software → Add → Archive**.
+2. Selecciona `dbeaver-echarts-<version>.zip` sin descomprimirlo.
+3. Marca **DBeaver ECharts Presentation**, completa la instalación y reinicia.
+4. Ejecuta un `SELECT` y selecciona **ECharts** en las pestañas del resultado.
+5. Para reportes, abre **Window → Show View → Other → ECharts → Report Designer**.
 
-## Architecture
+Target probado: **DBeaver Community 26.2.2, Windows y Linux x86_64**.
+Es una **beta sin firma**, con certificación de drivers, clientes de correo y macOS pendiente.
+Consulta la [guía de instalación](docs/P2-UPDATE-SITE.md), la
+[matriz de compatibilidad](docs/COMPATIBILITY.md) y los [pendientes de producción](docs/PRODUCTION-READINESS.md).
+
+## Funcionalidades en imágenes
+
+Capturas reales del plugin con datos de ejemplo. La captura del diseñador en Linux
+se tomó dentro de DBeaver; las demás muestran el frontend local durante sus pruebas.
+
+### Dashboards y mapas
+
+Combina gráficos y mapas; mueve los widgets desde la cabecera y cambia su tamaño
+desde **cualquier borde o esquina**. Guarda posiciones, configuración y SQL como
+JSON versionado y archivo `.sql` en `Dashboards/ECharts`.
+
+![Dashboard con barras, líneas y mapa geográfico](docs/screenshots/dashboard.png)
+
+### SQL independiente por gráfico
+
+**Add widget** y **Edit** permiten elegir conexión, editar SQL y ejecutar **Run preview**.
+Selecciona columnas, series y ejes antes de aplicar el gráfico. Cada widget tiene su
+propia consulta y política de refresco; **Review SQL** revisa las consultas guardadas.
+
+![Editor de widget con consulta SQL, selección de series y vista previa](docs/screenshots/widget-sql.png)
+
+### Diseñador de reportes
+
+Diseña una hoja con títulos, textos, imágenes, secciones, gráficos, KPIs y tablas SQL.
+Configura propiedades, fuentes de datos y parámetros; guarda plantillas reutilizables
+con su SQL. Las tablas admiten paginación, totales y formato condicional.
+
+![Report Designer instalado en DBeaver Linux con gráfico, tabla paginada y KPI](docs/screenshots/report-designer-linux.png)
+
+### Arrastre con reorganización previa
+
+Al arrastrar un componente, la hoja muestra el espacio que ocupará y cómo se desplazarán
+los demás elementos antes de soltarlo. Al eliminar componentes se recupera el espacio;
+**Close gaps**, deshacer y rehacer ayudan a ajustar la distribución.
+
+![Vista previa de inserción de un título con los componentes desplazados](docs/screenshots/report-reflow.png)
+
+### Borrador de correo con vista previa
+
+La vista previa aparece **debajo del formulario**. El EML incluye los gráficos como
+imágenes CID y respeta la página y altura configuradas de las tablas, sin extenderlas
+a toda la consulta. Puede adjuntar el HTML interactivo. **El plugin guarda el borrador;
+no envía correo**. Su apertura y edición dependen del cliente instalado.
+
+![Formulario de borrador EML con vista previa del reporte debajo](docs/screenshots/email-preview.png)
+
+## Gráficos y exportación
+
+- Líneas, áreas, barras verticales y horizontales, barras y áreas apiladas, dispersión,
+  pastel, gauge, radar, heatmap, boxplot, treemap, funnel y mapa geográfico.
+- Varias series, doble eje Y, escala visual, líneas y áreas de referencia.
+- Tooltip, zoom, restauración y descarga PNG; renderizadores Canvas y SVG.
+- Tema claro/oscuro sincronizado con DBeaver; filtros compartidos y drill-down en dashboards.
+- Reportes HTML interactivos autocontenidos y HTML estático para correo.
+
+ECharts, el mapa y los recursos del frontend se empaquetan localmente, sin CDN ni telemetría.
+El HTML exportado permite consultar los datos incluidos; actualizar SQL requiere DBeaver.
+Guías: [dashboards](docs/DASHBOARDS.md), [Report Designer](docs/REPORT-DESIGNER.md),
+[cambios del release](CHANGELOG.md).
+
+## Arquitectura y mantenimiento
+
+Java 21 · Apache ECharts 6.1.0 · Eclipse PDE / SWT Browser.
 
 ```text
-DBeaver ResultSet / active execution context
-              |
-              v
+Resultados DBeaver / consultas aisladas
+              ↓
 DBeaverResultSetAdapter / DashboardQueryJob
-              |
-              v
-       versioned JSON snapshots
-              |
-              v
-EChartsPresentation (SWT Browser bridge, UI-thread boundary)
-              |
-              v
- chart.js -> analytics.js / dashboard.js -> Apache ECharts
+              ↓
+Snapshots JSON → EChartsPresentation → frontend local → ECharts
 ```
 
-Important boundaries:
+- `DashboardQueryJob` ejecuta consultas revisadas en contextos independientes;
+  `DashboardQueryApproval` liga la aprobación de sesión al SQL y la conexión.
+- `EChartsPresentation` mantiene el ciclo de vida SWT y el límite del hilo UI.
+- `analytics.js` construye opciones; `dashboard.js` y `widget-editor.js` separan modelo y edición.
+- `ReportFiles` valida plantillas; `DocumentFiles` centraliza escritura atómica por archivo
+  y protección de los acompañantes SQL. El par JSON/SQL no es una transacción.
+- Los [módulos de reportes](docs/REPORT-DESIGNER.md) separan plantilla, datos, render y correo.
 
-- `DBeaverResultSetAdapter` is the ResultSet-to-DTO boundary.
-- `DashboardQueryJob` executes one approved, conservatively validated widget query in an isolated context.
-- `DashboardQueryApproval` binds session approval to the SQL and connection reference.
-- `EChartsPresentation` owns SWT lifecycle and marshals browser calls to the UI thread.
-- `analytics.js` contains pure chart-option builders.
-- `dashboard.js` owns the versioned dashboard model and view rendering.
-- `widget-editor.js` owns detached widget drafts, preview data and chart configuration.
-- The [Report Designer modules and usage guide](docs/REPORT-DESIGNER.md) separate template definitions, runtime data, rendering and email drafts.
-
-## Development baseline
-
-- Java 21
-- Apache ECharts 6.1.0
-- Verified compile and registry target: DBeaver Community 26.2.2 on Windows x86_64
-
-## Install in normal DBeaver
-
-Use the generated P2 ZIP through **Help → Install New Software → Add → Archive**,
-select **DBeaver ECharts Presentation**, accept the license and restart DBeaver.
-Eclipse is not needed to use the installed plugin. See the
-[installation and package build guide](docs/P2-UPDATE-SITE.md).
-
-The **P2 package** GitHub Actions workflow validates sources, builds the installer,
-and tests install/upgrade/uninstall/reinstall against a clean Windows DBeaver.
-Successful runs provide a downloadable P2 ZIP, checksum and lifecycle test report
-under **Actions → P2 package → Artifacts**.
-
-See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) before widening the supported range.
-Production release as an independent plugin still has open requirements;
-see [the readiness review](docs/PRODUCTION-READINESS.md).
-
-## Validate
+## Validar y desarrollar
 
 Windows:
 
@@ -85,54 +107,25 @@ Windows:
 .\scripts\validate.ps1 -DBeaverPlugins C:\dbeaver\plugins
 ```
 
-Linux/macOS:
+Linux:
 
 ```bash
-DBEAVER_PLUGINS=/opt/dbeaver/plugins ./scripts/validate.sh
+DBEAVER_PLUGINS=/opt/dbeaver/plugins bash scripts/validate.sh
 ```
 
-The validation checks XML, all custom JavaScript, chart/dashboard behavior,
-third-party assets, extension contracts and Java compilation against the supplied
-DBeaver installation.
+La validación comprueba fuentes Java/JavaScript, formatos, controles de consultas,
+recursos y contratos del plugin. GitHub Actions construye el P2 y prueba instalación,
+actualización, desinstalación y reinstalación en Windows; también instala y prueba
+el mismo paquete en Linux con Chromium y WebKit.
 
-## Eclipse PDE workflow
+Para una vista local con datos de ejemplo: `node scripts/preview.js`, luego abre
+`http://127.0.0.1:8765`. Para Eclipse, importa los proyectos de `plugins/`, `features/`
+y `sites/` y usa la instalación de DBeaver como target.
+Consulta [desarrollo](docs/DEVELOPMENT.md), [build](docs/BUILD.md) y
+[empaquetado P2](docs/P2-UPDATE-SITE.md).
 
-For a browser preview with sample data and automatic reload, run
-`node scripts/preview.js` and open `http://127.0.0.1:8765`.
-See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the local Eclipse target,
-launch configuration, portable DBeaver setup and sample SQL workflow.
+## Licencias
 
-Import these projects into the Eclipse workspace:
-
-- `plugins/org.example.dbeaver.echarts`
-- `features/org.example.dbeaver.echarts.feature`
-- `sites/org.example.dbeaver.echarts.site`
-
-Set the DBeaver installation as the target, clean the workspace and launch the
-DBeaver product. Detailed steps are in [docs/BUILD.md](docs/BUILD.md).
-
-## Distribution
-
-The feature and update-site projects produce an installable P2 repository. The
-repository definition is versioned; hosting is intentionally external to this
-source tree. See [docs/P2-UPDATE-SITE.md](docs/P2-UPDATE-SITE.md).
-
-## Third-party assets
-
-ECharts and the world GeoJSON are pinned and packaged locally. Their licenses,
-notices, hashes and refresh scripts live under `third-party/` and `scripts/`.
-Never replace them with an unpinned `latest` download.
-
-## Dashboards guardados
-
-**Save dashboard** conserva SQL y configuración en `Dashboards/ECharts`, como
-JSON versionado y copia `.sql`. **Open dashboard** abre un editor independiente
-del resultado SQL. Consulta [la guía de dashboards](docs/DASHBOARDS.md).
-
-Arrastra un widget desde su cabecera y redimensiónalo desde la esquina inferior
-derecha. Sus posiciones y tamaños se conservan en el JSON del dashboard.
-
-Desde el dashboard, **Add widget** crea un gráfico con su propio SQL y conexión.
-**Edit** modifica uno existente; **Run preview** carga sus columnas para elegir
-tipo de gráfico, categoría, series y ejes. **Apply widget** aplica el borrador
-y **Save dashboard** lo guarda junto con los demás gráficos.
+Los recursos de terceros tienen versiones y hashes fijados. Licencias, avisos y
+procedencia están en [third-party/](third-party/); los scripts de actualización
+están en `scripts/`.

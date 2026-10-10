@@ -5,7 +5,9 @@ to build the package, but is not needed to use it.
 
 ## Instalar en DBeaver
 
-Target verificado: **DBeaver Community 26.2.2, Windows x86_64**.
+Target de la beta: **DBeaver Community 26.2.2, Windows y Linux x86_64**.
+Descarga el ZIP P2 y el checksum desde el
+[release 0.6.0 beta](https://github.com/michaaels/dbeaver_echart_plugin/releases/tag/v0.6.0-beta.1).
 
 1. Abre **Help / Ayuda → Install New Software / Instalar nuevo software**.
 2. Pulsa **Add / Añadir → Archive / Archivo** y selecciona `dbeaver-echarts-<version>.zip`.
@@ -111,12 +113,14 @@ intentionally when a new release becomes the supported upgrade baseline.
 Open **GitHub → Actions → P2 package → successful run → Artifacts** and download
 `dbeaver-echarts-p2-windows-<commit>`. Extract that Actions download, then select
 the inner `dbeaver-echarts-<version>.zip` in DBeaver's **Add → Archive** dialog.
-Artifacts are retained for 14 days. This workflow does not publish a GitHub Release
-or deploy a public update site. Real database/driver and SWT workbench tests remain
-outside this CI gate.
+Artifacts are retained for 14 days. Published release ZIPs and checksums are also
+available in GitHub Releases. The workflow does not deploy a public update site.
+After Windows passes, Ubuntu installs the same archive and runs Chromium/WebKit
+report and dashboard suites. Native SWT and real driver scenarios are tested
+separately; they are not a complete driver certification.
 
-This package is for testing. Signing, public hosting, other OS targets and full
-SWT workbench validation remain part of the [release gate](COMPATIBILITY.md).
+This is an unsigned beta package. Signing, a hosted update site, macOS and full
+SWT/driver certification remain part of the [release gate](COMPATIBILITY.md).
 
 ## Eclipse PDE alternative
 
