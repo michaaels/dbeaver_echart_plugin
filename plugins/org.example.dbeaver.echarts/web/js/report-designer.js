@@ -4,7 +4,7 @@
   const $ = id => document.getElementById(id), node = W.node;
   const history = M.history(M.create());
   let selected = new Set(), clipboard = null, values = {}, saved = JSON.stringify(history.get()), persistTimer = null;
-  let cleanup = null, previewCleanup = null, gesture = null, zoom = 1, reviewed = [], generating = false, sourceSelection = null, assets = null, email = null, discardAction = null;
+  let cleanup = null, previewCleanup = null, gesture = null, canvasRefreshPending = false, zoom = 1, reviewed = [], generating = false, sourceSelection = null, assets = null, email = null, discardAction = null;
   const charts = new Map();
   let tablePages = {}, libraryDrag = null, dropPreview = null;
   let theme = { background: '#ffffff', foreground: '#243447', muted: '#657487', border: '#d5dce3', grid: '#e5eaf0', controlBackground: '#f3f3f3', dark: false };
@@ -12,7 +12,8 @@
     approve: json => window.dbeaverApproveWidgetQueries?.(json), execute: (id, sql, source) => window.dbeaverExecuteWidgetQuery?.(id, sql, source),
     cancel: (id, revoke) => window.dbeaverCancelWidgetQuery?.(id, revoke), reset: () => window.dbeaverResetDashboardQueries?.()
   }, state => {
-    if (!gesture) { renderCanvas(); renderProperties(); }
+    if (!gesture && !libraryDrag) { renderCanvas(); renderProperties(); }
+    else canvasRefreshPending = true;
     $('stopReport').hidden = !state.running && !state.pending;
     if (state.running || state.pending) status(`${state.running} queries running${state.pending ? ` · ${state.pending} queued` : ''}`);
     else if (Object.keys(state.errors).length) status('Some queries failed. The design is retained; inspect Data and refresh again.', true);
@@ -67,9 +68,44 @@
       control.setAttribute('aria-pressed', String(selected.has(widget.id))); control.dataset.layerId = widget.id; $('reportLayers').append(control);
     }
   }
+  function layoutPreview() {
+    // Plan from the saved layout each time, never from previously displaced DOM.
+    // Placement is the same routine used by history.change on commit.
+    const baseline = M.clone(current().widgets), stageHeight = $('reportStage').style.height;
+    const frames = new Map([...$('reportCanvas').querySelectorAll('[data-component-id]')].map(frame => [frame.dataset.componentId, frame]));
+    let key = '', planned = null;
+    function apply(widgets) {
+      for (const widget of widgets) {
+        const frame = frames.get(widget.id); if (!frame) continue;
+        const layout = widget.layout;
+        frame.style.gridColumn = `${layout.x + 1} / span ${layout.width}`;
+        frame.style.gridRow = `${layout.y + 1} / span ${layout.height}`;
+        const original = baseline.find(item => item.id === widget.id).layout;
+        frame.toggleAttribute('data-layout-preview', JSON.stringify(layout) !== JSON.stringify(original));
+      }
+    }
+    return {
+      show(widget, insert = false) {
+        const nextKey = JSON.stringify([widget.id, widget.parentId, widget.layout, insert]);
+        if (nextKey !== key) {
+          planned = M.clone(baseline);
+          if (insert) planned.push(M.clone(widget));
+          else planned.find(item => item.id === widget.id).layout = { ...widget.layout };
+          M.place(planned, widget.id); key = nextKey;
+        }
+        apply(planned);
+      },
+      restore() { apply(baseline); $('reportStage').style.height = stageHeight; }
+    };
+  }
+  function resizeStage() { $('reportStage').style.height = `${Math.max(480, $('reportCanvas').scrollHeight) * zoom}px`; }
   function clearDropPreview(end = false) {
+    dropPreview?.layouts.restore();
     dropPreview?.dispose?.(); dropPreview?.frame.remove(); dropPreview = null;
-    if (end) libraryDrag = null;
+    if (end) {
+      libraryDrag = null; $('reportCanvas').removeAttribute('data-library-drag');
+      if (canvasRefreshPending) { renderCanvas(); renderProperties(); }
+    }
   }
   function dropCandidate(event, grid, type = libraryDrag?.type) {
     if (!M.TYPES.includes(type) || !grid) return null;
@@ -97,13 +133,16 @@
       frame.setAttribute('aria-hidden', 'true'); frame.append(body); grid.append(frame);
       const label = node('div', undefined, 'report-drop-label'); frame.append(label);
       const dispose = W.renderWidget(body, widget, null, { designer: true });
-      dropPreview = { frame, label, grid, dispose };
+      dropPreview = { frame, label, grid, dispose, layouts: layoutPreview() };
     }
+    if (valid) dropPreview.layouts.show(widget, true);
+    else dropPreview.layouts.restore();
     const gap = current().page.gap, pitch = (grid.getBoundingClientRect().width / zoom + gap) / 12;
     Object.assign(dropPreview.frame.style, { left: `${widget.layout.x * pitch}px`, top: `${widget.layout.y * (24 + gap)}px`,
       width: `${widget.layout.width * pitch - gap}px`, height: `${widget.layout.height * (24 + gap) - gap}px` });
     dropPreview.frame.dataset.invalid = String(!valid);
     dropPreview.label.textContent = valid ? `${W.registry.get(widget.type).label} · ${widget.layout.width} columns × ${widget.layout.height} rows` : 'Increase the section height to fit this component';
+    resizeStage();
   }
   function commitDrop(event, grid) {
     const type = libraryDrag?.type || event.dataTransfer.getData('application/x-echarts-report-component');
@@ -114,20 +153,19 @@
   }
   function renderCanvas() {
     if (!$('reportCanvas')) return;
+    canvasRefreshPending = false;
     cleanup?.(); charts.clear();
     const state = execution.state();
     clearDropPreview();
     cleanup = W.renderReport($('reportCanvas'), current(), state.snapshots, { ...state, charts, tablePages, parameters: values, designer: true, decorate });
-    // Bind every grid, including empty sections; the nearest grid owns a drop.
+    // Delegated drop handling uses the original geometry to avoid target drift.
     for (const grid of $('reportCanvas').querySelectorAll('.report-grid')) {
       grid.style.position = 'relative';
-      grid.addEventListener('dragover', event => previewDrop(event, grid));
-      grid.addEventListener('drop', event => commitDrop(event, grid));
     }
     $('reportCanvas').classList.toggle('show-grid', current().page.grid);
     $('reportCanvas').style.transform = `scale(${zoom})`;
     $('reportStage').style.width = `${current().page.width * zoom}px`;
-    $('reportStage').style.height = `${Math.max(480, $('reportCanvas').scrollHeight) * zoom}px`;
+    resizeStage();
     $('reportCanvas').style.minHeight = '480px';
     $('reportEmpty').hidden = current().widgets.length > 0;
   }
@@ -246,13 +284,13 @@
     const pitch = (origin.width + current().page.gap * zoom) / 12, rowPitch = (24 + current().page.gap) * zoom;
     let candidate = initial;
     const guide = node('div', undefined, 'report-drag-guide'); frame.append(guide); document.body.classList.add('report-dragging');
-    const apply = layout => { frame.style.gridColumn = `${layout.x + 1} / span ${layout.width}`; frame.style.gridRow = `${layout.y + 1} / span ${layout.height}`; charts.get(widget.id)?.resize(); };
+    const layouts = layoutPreview();
     const scroll = $('reportCanvas').closest('.report-canvas-scroll'); let latest = event, moved = false;
     function update(pointer) {
       latest = pointer; const box = grid.getBoundingClientRect();
       const dx = Math.round((pointer.clientX - x - box.x + origin.x) / pitch), dy = Math.round((pointer.clientY - y - box.y + origin.y) / rowPitch);
       candidate = edge === 'move' ? L.normalizeLayout({ ...initial, x: initial.x + dx, y: initial.y + dy }, M.BOUNDS) : L.resizeLayout(initial, edge, dx, dy, M.BOUNDS);
-      apply(candidate);
+      layouts.show({ ...widget, layout: candidate }); resizeStage();
     }
     function finish(commit) {
       gesture = null; clearInterval(timer); document.body.classList.remove('report-dragging'); guide.remove();
@@ -260,7 +298,7 @@
       document.removeEventListener('pointercancel', cancel, true); document.removeEventListener('keydown', escape, true); window.removeEventListener('blur', cancel);
       handle.removeEventListener('lostpointercapture', cancel);
       try { handle.releasePointerCapture(pointerId); } catch (error) { /* Capture may have ended in the native browser. */ }
-      apply(initial);
+      layouts.restore();
       if (commit) change(draft => { draft.widgets.find(item => item.id === widget.id).layout = candidate; draft.priorityId = widget.id; });
       else renderCanvas();
     }
@@ -450,13 +488,21 @@
     for (const [type, definition] of W.registry) {
       const control = P.button('', () => add(type)); control.dataset.componentType = type; control.draggable = true;
       control.append(node('span', definition.icon, 'component-icon'), node('span', definition.label));
-      control.addEventListener('dragstart', event => { clearDropPreview(true); libraryDrag = { type, widget: M.widget(type) }; event.dataTransfer.setData('application/x-echarts-report-component', type); event.dataTransfer.effectAllowed = 'copy'; }); $('componentLibrary').append(control);
+      control.addEventListener('dragstart', event => { clearDropPreview(true); libraryDrag = { type, widget: M.widget(type) }; $('reportCanvas').setAttribute('data-library-drag', ''); event.dataTransfer.setData('application/x-echarts-report-component', type); event.dataTransfer.effectAllowed = 'copy'; }); $('componentLibrary').append(control);
       control.addEventListener('dragend', () => clearDropPreview(true));
     }
     $('reportCanvas').addEventListener('pointerdown', event => { if (!event.target.closest('.report-component')) select(null); });
     const dropGrid = event => {
-      const container = event.target.closest('.report-component'), component = current().widgets.find(widget => widget.id === container?.dataset.componentId);
-      return component && W.registry.get(component.type)?.container ? container.querySelector('.report-grid') : event.target.closest('.report-grid') || $('reportCanvas').querySelector('.report-grid');
+      // Hit-test before displacement; a moved section must not capture the next
+      // dragover just because the preview placed it under the pointer.
+      dropPreview?.layouts.restore();
+      // A stable transparent surface receives native drag events while siblings
+      // move underneath it. Temporarily bypass it to identify the real section.
+      $('reportCanvas').removeAttribute('data-library-drag');
+      const target = document.elementFromPoint(event.clientX, event.clientY);
+      if (libraryDrag) $('reportCanvas').setAttribute('data-library-drag', '');
+      const container = target?.closest('#reportCanvas .report-component'), component = current().widgets.find(widget => widget.id === container?.dataset.componentId);
+      return component && W.registry.get(component.type)?.container ? container.querySelector('.report-grid') : target?.closest('#reportCanvas .report-grid') || $('reportCanvas').querySelector('.report-grid');
     };
     $('reportCanvas').addEventListener('dragover', event => previewDrop(event, dropGrid(event)));
     $('reportCanvas').addEventListener('drop', event => {
@@ -522,7 +568,7 @@
     markReportSaved: () => { saved = JSON.stringify(current()); renderControls(); },
     setWidgetSnapshot: (id, snapshot) => window.DBeaverWidgetEditor.receiveSnapshot(id, snapshot) || execution.receive(id, snapshot),
     setWidgetError: (id, message) => window.DBeaverWidgetEditor.receiveError(id, message) || execution.receiveError(id, message),
-    setLoading: () => {}, setSnapshot: () => {}, setError: message => status(message, true), dispose: () => { gesture?.cancel(); clearDropPreview(true); execution.stop(); cleanup?.(); previewCleanup?.(); window.DBeaverWidgetEditor.close(); } });
+    setLoading: () => {}, setSnapshot: () => {}, setError: message => status(message, true), dispose: () => { gesture?.cancel(); canvasRefreshPending = false; clearDropPreview(true); execution.stop(); cleanup?.(); previewCleanup?.(); window.DBeaverWidgetEditor.close(); } });
   window.addEventListener('pagehide', () => { window.clearTimeout(persistTimer); window.DBeaverECharts.dispose(); });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();

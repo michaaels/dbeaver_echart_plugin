@@ -31,12 +31,14 @@
 .report-library > button { margin-top: 6px; width: 100%; font-size: 11px; }
 .report-canvas-scroll { overflow: auto; position: relative; background: var(--bg); padding: 28px; }
 .report-stage { position: relative; margin: 0 auto; }
-#reportCanvas { transform-origin: top left; box-shadow: 0 2px 12px #0002; }
+#reportCanvas { position: relative; transform-origin: top left; box-shadow: 0 2px 12px #0002; }
+#reportCanvas[data-library-drag]::after { content: ''; position: absolute; inset: 0; z-index: 19; }
 #reportCanvas.show-grid .report-grid { background-image: linear-gradient(to bottom, #d5dce340 1px, transparent 1px); background-size: 100% 32px; }
 .report-empty { position: absolute; top: 100px; left: 48px; right: 48px; color: #657487; font-size: 16px; text-align: center; pointer-events: none; }
 .report-empty[hidden] { display: none; }
 .report-component { outline: 1px solid transparent; outline-offset: -1px; }
 #reportCanvas .report-component:hover { outline-color: #58a6e780; }
+#reportCanvas .report-component[data-layout-preview] { outline-color: #21679b55; }
 #reportCanvas .report-component.selected { outline: 2px solid #21679b; outline-offset: 0; z-index: 2; }
 #reportCanvas .report-component[data-condition-hidden=true] { opacity: .5; }
 .report-component-toolbar { position: absolute; top: -21px; left: 0; display: none; gap: 2px; background: #21679b; color: white; z-index: 8; height: 21px; align-items: center; padding: 0 4px; max-width: 100%; }

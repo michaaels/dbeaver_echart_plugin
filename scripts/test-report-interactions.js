@@ -96,9 +96,14 @@ async function main() {
     const beforeCancel = await doc();
     await page.mouse.move(libraryBox.x + 20, libraryBox.y + 10); await page.mouse.down();
     await page.mouse.move(libraryBox.x + 30, libraryBox.y + 15);
-    await page.mouse.move(targetBox.x + 50, targetBox.y + 120, { steps: 8 }); await page.mouse.move(targetBox.x + 50, targetBox.y + 120);
-    await ghost.waitFor(); await page.keyboard.press('Escape'); await page.mouse.up();
+    await page.mouse.move(targetBox.x + 50, targetBox.y + 50, { steps: 8 }); await page.mouse.move(targetBox.x + 50, targetBox.y + 50);
+    await ghost.waitFor();
+    assert.equal(await page.locator(`[data-component-id="${nested.id}"]`).evaluate(element => element.style.gridRow), '4 / span 2', 'Section sibling reflows within its own grid');
+    assert.deepEqual(await doc(), beforeCancel);
+    assert.equal(await page.locator('[data-component-id="section"]').evaluate(element => element.style.gridRow), '1 / span 12', 'Nested preview does not move its parent');
+    await page.keyboard.press('Escape'); await page.mouse.up();
     assert.equal(await ghost.count(), 0); assert.deepEqual(await doc(), beforeCancel);
+    assert.equal(await page.locator(`[data-component-id="${nested.id}"]`).evaluate(element => element.style.gridRow), '2 / span 2');
     await page.locator('[data-layer-id="section"]').click(); await page.locator('#componentProperties').getByRole('button', { name: 'Copy', exact: true }).click();
     await page.locator('#componentProperties').getByRole('button', { name: 'Paste', exact: true }).click();
     assert.equal((await doc()).widgets.filter(widget => widget.type === 'section').length, 2); assert.equal((await doc()).widgets.filter(widget => widget.type === 'heading').length, 2);
@@ -124,9 +129,80 @@ async function main() {
     const zoomPlaced = await page.locator(`[data-component-id="${placedTable.id}"]`).boundingBox();
     for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(zoomPlaced[key] - zoomGhost[key]) < 1, `Zoomed drop matches ${key}`);
     await page.locator('#undoReport').click(); assert.equal((await doc()).widgets.length, 0);
+    // Inserting into occupied space previews the whole report, not an overlay.
+    const reflowReport = await page.evaluate(fixture => {
+      const M = window.DBeaverReportModel, report = M.clone(fixture), title = M.widget('heading'), table = M.widget('table'), kpi = M.widget('kpi');
+      title.id = 'title'; title.layout = { x: 0, y: 0, width: 12, height: 2 };
+      report.widgets[0].layout = { x: 0, y: 2, width: 7, height: 8 };
+      table.id = 'table'; table.layout = { x: 7, y: 2, width: 5, height: 8 }; table.sourceId = 'daily';
+      kpi.id = 'kpi'; kpi.layout = { x: 0, y: 10, width: 12, height: 3 }; kpi.sourceId = 'daily'; kpi.config.column = 'ventas';
+      report.widgets = [title, report.widgets[0], table, kpi]; return M.normalize(report);
+    }, fixture);
+    const domLayouts = () => page.locator('#reportCanvas [data-component-id]').evaluateAll(frames => Object.fromEntries(frames.map(frame => {
+      const [x, width] = frame.style.gridColumn.match(/\d+/g).map(Number), [y, height] = frame.style.gridRow.match(/\d+/g).map(Number);
+      return [frame.dataset.componentId, { x: x - 1, y: y - 1, width, height }];
+    })));
+    const modelLayouts = report => Object.fromEntries(report.widgets.map(widget => [widget.id, widget.layout]));
+    const beginHeading = async (x, y) => {
+      const button = page.locator('[data-component-type="heading"]'); await button.scrollIntoViewIfNeeded(); const box = await button.boundingBox();
+      await page.mouse.move(box.x + 20, box.y + 10); await page.mouse.down(); await page.mouse.move(box.x + 35, box.y + 15);
+      await page.mouse.move(x, y, { steps: 8 }); await page.mouse.move(x, y); await ghost.waitFor();
+    };
+    for (const zoom of ['1', '0.75']) {
+      await page.evaluate(() => { window.queryFailure = false; });
+      await page.evaluate(report => window.DBeaverECharts.loadReport(report), reflowReport);
+      await page.locator('#reportZoom').selectOption(zoom);
+      await page.locator('#generateReport').click(); await page.locator('#runReportQueries').click();
+      await page.waitForFunction(() => document.getElementById('reportPreviewDialog').open);
+      await page.locator('[data-close="reportPreviewDialog"]').click();
+      const original = await doc(), baseline = modelLayouts(original), queries = await page.evaluate(() => window.queryCount);
+      const rootBox = await page.locator('#reportCanvas > .report-grid').boundingBox(), x = rootBox.x + 25, y = rootBox.y + 15;
+      await beginHeading(x, y);
+      const preview = await domLayouts();
+      assert.deepEqual(Object.fromEntries(Object.entries(preview).map(([id, layout]) => [id, layout.y])), { title: 2, chart: 4, table: 4, kpi: 12 }, 'All colliding siblings move before release');
+      assert.deepEqual(await doc(), original, 'Reflow preview never edits the template');
+      // Repeated hover and changing rows must always plan from the original layout.
+      await page.mouse.move(x, y + 64 * Number(zoom)); await page.mouse.move(x, y);
+      assert.deepEqual(await domLayouts(), preview, 'Returning to the same position does not accumulate displacement');
+      await page.screenshot({ path: path.join(root, `.dev/screenshots/report-reflow-preview-${zoom}.png`) });
+      await page.keyboard.press('Escape'); await page.mouse.up();
+      assert.deepEqual(await domLayouts(), baseline, 'Escape restores every component');
+      assert.deepEqual(await doc(), original); assert.equal(await page.locator('#undoReport').isDisabled(), true, 'Preview does not create undo entries');
+      await beginHeading(x, y);
+      const beforeRelease = await domLayouts(), footprint = await ghost.boundingBox(); await page.mouse.up();
+      const inserted = (await doc()).widgets.find(widget => !baseline[widget.id]);
+      assert.ok(inserted, 'Drop must insert the previewed component'); const committed = modelLayouts(await doc());
+      for (const id of Object.keys(baseline)) assert.deepEqual(committed[id], beforeRelease[id], `Committed ${id} matches preview`);
+      const placed = await page.locator(`[data-component-id="${inserted.id}"]`).boundingBox();
+      for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(placed[key] - footprint[key]) < 1);
+      assert.equal(await page.evaluate(() => window.queryCount), queries, 'Preview and commit do not run SQL');
+      await page.locator('#undoReport').click(); assert.deepEqual(await doc(), original);
+      await page.locator('#redoReport').click(); assert.deepEqual(modelLayouts(await doc()), committed);
+      await page.locator('#undoReport').click();
+      await beginHeading(x, y); await page.mouse.move(20, 20); await page.mouse.up();
+      assert.equal(await ghost.count(), 0); assert.deepEqual(await domLayouts(), baseline, 'Leaving the sheet restores all positions');
+    }
+    // Moving and resizing existing components uses the same live collision preview.
+    await page.locator('[data-layer-id="title"]').click();
+    const titleFrame = page.locator('[data-component-id="title"]');
+    for (const edge of ['move', 's']) {
+      const original = await doc(), baseline = modelLayouts(original);
+      const handle = titleFrame.locator(edge === 'move' ? '.report-move' : '[data-edge="s"]'), box = await handle.boundingBox();
+      const x = box.x + box.width / 2, y = box.y + box.height / 2;
+      await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x, y + 32 * .75, { steps: 5 });
+      const preview = await domLayouts(); assert.equal(preview.chart.y, 3); assert.equal(preview.table.y, 3); assert.equal(preview.kpi.y, 11);
+      assert.deepEqual(await doc(), original);
+      await page.keyboard.press('Escape'); await page.mouse.up(); assert.deepEqual(await domLayouts(), baseline);
+      const again = await titleFrame.locator(edge === 'move' ? '.report-move' : '[data-edge="s"]').boundingBox();
+      await page.mouse.move(again.x + again.width / 2, again.y + again.height / 2); await page.mouse.down();
+      await page.mouse.move(again.x + again.width / 2, again.y + again.height / 2 + 32 * .75, { steps: 5 });
+      const finalPreview = await domLayouts(); await page.mouse.up(); assert.deepEqual(modelLayouts(await doc()), finalPreview);
+      await page.locator('#undoReport').click(); assert.deepEqual(await doc(), original);
+    }
+    assert.deepEqual(errors, []);
     await page.evaluate(() => window.DBeaverECharts.dispose());
     assert.equal(await page.locator('.report-drag-guide,.report-drop-preview').count(), 0);
-    console.log('Report interaction OK: all 8 mouse edges, full border hits, ECharts resize, anchored bounds, Escape/undo, 75% zoom, move, failed refresh, section drop/copy/delete, narrow windows and disposal');
+    console.log('Report interaction OK: 8 edges, ECharts resize, live sibling reflow on insert/move/resize, preview/commit equality, no cumulative drift or SQL, Escape/outside/undo/redo, 75% zoom, sections and disposal');
   } finally { await browser.close(); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

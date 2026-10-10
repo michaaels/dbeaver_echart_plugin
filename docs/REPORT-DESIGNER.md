@@ -77,8 +77,12 @@ Save templates under `Reports/ECharts` as `.echarts-report.json` with a generate
 
 Click a library component to append it without displacing existing content, or drag
 it onto the sheet/section to choose a position. Before dropping, a live component
-preview shows the exact footprint at the current zoom; releasing places it there,
-and Escape or leaving the sheet removes the preview without changing the template.
+preview shows the exact footprint at the current zoom and moves the existing
+components to show the complete resulting layout. Moving or resizing an existing
+component also previews collision displacement. Releasing commits that layout;
+Escape or leaving the sheet restores the original positions without changing the
+template, creating an undo entry or executing SQL. Repeated hover plans from the
+original layout, and hit-testing uses original section positions to avoid drift.
 An undersized section shows an invalid preview and asks for more height.
 Selecting a section before clicking
 adds the component inside it. Deleting components closes vertical gaps in the
