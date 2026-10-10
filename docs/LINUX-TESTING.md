@@ -41,6 +41,8 @@ Browser suites default to Edge on Windows and Chromium elsewhere. Set
 On slow test machines, `ECHARTS_TEST_TIMEOUT_MS=120000` increases browser action
 timeouts; assertions remain unchanged and the default stays at Playwright's
 normal timeout.
+Browser fixtures use `en-US` for deterministic text assertions. Native SWT checks
+should retain the machine's locale and compare values with its actual formatter.
 
 These browser tests use controlled bridge fixtures. They complement native
 SWT/WebKit checks in a running DBeaver; they do not prove native JDBC execution
