@@ -473,7 +473,13 @@ public final class EChartsPresentation extends AbstractPresentation {
     }
 
     private void executeBrowser(String script) {
-        runOnUiThread(() -> {
+        Display currentDisplay = display;
+        if (currentDisplay == null || currentDisplay.isDisposed()) {
+            return;
+        }
+        // A BrowserFunction must return to WebKit before Java evaluates more
+        // JavaScript. Re-entering execute() from that callback deadlocks GTK.
+        currentDisplay.asyncExec(() -> {
             Browser currentBrowser = browser;
             if (currentBrowser != null && !currentBrowser.isDisposed()) {
                 currentBrowser.execute(script);
