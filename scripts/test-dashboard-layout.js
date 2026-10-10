@@ -45,4 +45,16 @@ for (let step = 0; step < 100; step++) {
     for (const other of packed.slice(index + 1)) assert.equal(layout.overlaps(current.layout, other.layout), false);
   }
 }
-console.log('Dashboard layout tests OK: legacy migration, move, resize, persistence, bounds and 24-widget collisions');
+const initial = { x: 3, y: 2, width: 6, height: 8 };
+const expected = {
+  e: [3, 2, 7, 8], w: [2, 2, 7, 8], n: [3, 1, 6, 9], s: [3, 2, 6, 9],
+  ne: [3, 1, 7, 9], nw: [2, 1, 7, 9], se: [3, 2, 7, 9], sw: [2, 2, 7, 9]
+};
+for (const [edge, values] of Object.entries(expected)) {
+  const result = layout.resizeLayout(initial, edge, edge.includes('w') ? -1 : 1, edge.includes('n') ? -1 : 1);
+  assert.deepEqual(plain(result), { x: values[0], y: values[1], width: values[2], height: values[3] }, edge);
+}
+assert.deepEqual(plain(layout.resizeLayout(initial, 'nw', 999, 999)), { x: 5, y: 5, width: 4, height: 5 }, 'Minimum size preserves the opposite corner');
+assert.deepEqual(plain(layout.resizeLayout(initial, 'nw', -999, -999)), { x: 0, y: 0, width: 9, height: 10 }, 'Top and left cannot cross dashboard bounds');
+assert.deepEqual(plain(layout.resizeLayout(initial, 'se', 999, 999)), { x: 3, y: 2, width: 9, height: 24 }, 'Right bound and maximum height');
+console.log('Dashboard layout tests OK: legacy migration, eight-edge resize anchoring/bounds, move, persistence and 24-widget collisions');

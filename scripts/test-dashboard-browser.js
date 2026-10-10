@@ -71,7 +71,7 @@ async function main() {
     assert.equal((await layout()).x, 6);
     assert.equal(await page.locator('.widget-layout-preview').count(), 0);
 
-    const corner = await first.locator('.widget-resize-handle').boundingBox();
+    const corner = await first.locator('[data-resize-edge="se"]').boundingBox();
     const end = { x: corner.x + corner.width / 2, y: corner.y + corner.height / 2 };
     await page.mouse.move(end.x, end.y);
     await page.mouse.down();

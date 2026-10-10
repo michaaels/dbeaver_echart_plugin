@@ -79,6 +79,7 @@
       color: ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272', '#fc8452', '#9a60b4'],
       textStyle: { color: theme.foreground },
       title: {
+        show: !context.dashboard,
         text: titleText(columns, xIndex, yIndices),
         left: 12,
         top: 8,
@@ -91,7 +92,7 @@
         borderColor: theme.border,
         textStyle: { color: theme.foreground }
       },
-      legend: { type: 'scroll', top: 34, left: 12, right: 130, textStyle: { color: theme.foreground } },
+      legend: { type: 'scroll', top: context.dashboard ? 8 : 34, left: 12, right: 130, textStyle: { color: theme.foreground } },
       toolbox: toolbox(theme, zoom)
     };
   }
@@ -140,7 +141,7 @@
     for (const index of yIndices) axisNames[yAxes[index] === 'right' ? 'right' : 'left'].push(columns[index].name);
 
     // Keep the axis names below the title/legend band, including dual axes.
-    option.grid = { left: 62, right: axisNames.right.length ? 62 : 28, top: 96, bottom: 64, containLabel: true };
+    option.grid = { left: 62, right: axisNames.right.length ? 62 : 28, top: context.dashboard ? 68 : 96, bottom: 64, containLabel: true };
     option.xAxis = useTimeAxis
       ? { type: 'time', name: xColumn.name, nameLocation: 'middle', nameGap: 34, ...axisStyle(theme) }
       : useCategoryAxis
@@ -341,12 +342,14 @@
       map: 'world',
       roam: true,
       scaleLimit: { min: 1, max: 24 },
+      ...(context.dashboard ? { top: 16, bottom: 16 } : {}),
       itemStyle: { areaColor: theme.controlBackground, borderColor: theme.border },
       emphasis: { itemStyle: { areaColor: '#fac858' }, label: { color: theme.foreground } }
     };
     option.visualMap = {
       type: 'continuous', min: minimum, max: maximum, dimension: 2,
-      right: 8, bottom: 24, calculable: true, textStyle: { color: theme.muted }
+      right: 8, bottom: 24, calculable: true, textStyle: { color: theme.muted },
+      ...(context.dashboard ? { itemHeight: 100, top: 'middle', bottom: undefined } : {})
     };
     option.series = [{
       name: columns[valueIndex].name,
