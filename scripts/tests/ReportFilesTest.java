@@ -13,6 +13,7 @@ public final class ReportFilesTest {
     public static void main(String[] args) throws Exception {
         Path folder = Files.createTempDirectory("echarts-reports-test-");
         try {
+            checkDashboardConversion(folder);
             JsonObject report = JsonParser.parseString(ReportFiles.empty()).getAsJsonObject();
             report.addProperty("title", "Conexión y región\nResumen"); report.addProperty("password", "secret");
             JsonObject source = JsonParser.parseString("{\"id\":\"daily\",\"name\":\"Diario\",\"connectionId\":\"local\",\"sql\":\"SELECT 'niño' AS zona, :date AS fecha;\",\"password\":\"secret\",\"rows\":[[1]]}").getAsJsonObject();
@@ -42,10 +43,50 @@ public final class ReportFilesTest {
             var describer = new ReportContentDescriber();
             check(describer.describe(new ByteArrayInputStream(saved.getBytes(StandardCharsets.UTF_8)), null) == IContentDescriber.VALID, "Report content type");
             check(describer.describe(new ByteArrayInputStream("{\"setting\":1}".getBytes()), null) == IContentDescriber.INVALID, "Ordinary JSON hijacked");
-            System.out.println("Report files OK: UTF-8 JSON/SQL, credential isolation, chart options, default lifecycle, parent/source validation, companion collision and content routing");
+            System.out.println("Report files OK: dashboard conversion/layout round trip, UTF-8 JSON/SQL, credential isolation, chart options, default lifecycle, parent/source validation, companion collision and content routing");
         } finally {
             try (var files = Files.list(folder)) { for (Path file : files.toList()) Files.delete(file); } Files.delete(folder);
         }
+    }
+    private static void checkDashboardConversion(Path folder) throws Exception {
+        JsonObject dashboard = JsonParser.parseString("""
+            {"title":"Sales dashboard","widgets":[
+              {"id":"sales","title":"Daily sales","layout":{"x":2,"y":3,"width":6,"height":12,"password":"secret"},
+               "source":{"project":"General","connection":"Local","connectionId":"local-id","sql":"SELECT fecha, SUM(ventas) AS ventas, SUM(costos) AS costos FROM echarts_test_sales GROUP BY fecha;","password":"secret","rows":[[1]]},
+               "chart":{"chartType":"line","xColumn":"fecha","yColumns":["ventas","costos"],"yAxes":{"ventas":"left","costos":"right"},"marks":{"markLine":true}}},
+              {"id":"costs","title":"Costs","layout":{"x":8,"y":3,"width":4,"height":12},
+               "source":{"connectionId":"local-id","sql":"SELECT SUM(costos) AS costos FROM echarts_test_sales"},
+               "chart":{"chartType":"bar","yColumns":["costos"]}},
+              {"id":"default","title":"Default layout","source":{"sql":"SELECT 1 AS ventas"},"chart":{"chartType":"bar","yColumns":["ventas"]}}
+            ]}
+            """).getAsJsonObject();
+        String converted = ReportFiles.fromDashboard(dashboard.toString());
+        JsonObject report = ReportFiles.parse(converted);
+        check(report.get("title").getAsString().equals("Sales dashboard"), "Dashboard title lost");
+        check(report.getAsJsonArray("widgets").size() == 3 && report.getAsJsonArray("sources").size() == 3, "Dashboard components or queries lost");
+        for (int index = 0; index < 3; index++) {
+            JsonObject old = dashboard.getAsJsonArray("widgets").get(index).getAsJsonObject();
+            JsonObject widget = report.getAsJsonArray("widgets").get(index).getAsJsonObject();
+            JsonObject source = report.getAsJsonArray("sources").get(index).getAsJsonObject();
+            check(widget.get("id").equals(old.get("id")) && widget.get("title").equals(old.get("title")), "Widget identity lost");
+            check(widget.get("type").getAsString().equals("chart") && widget.get("sourceId").equals(source.get("id")), "Converted source binding lost");
+            check(source.get("sql").equals(old.getAsJsonObject("source").get("sql")), "Executed SQL changed during conversion");
+            if (old.has("layout")) {
+                JsonObject expected = old.getAsJsonObject("layout").deepCopy(); expected.remove("password");
+                check(widget.getAsJsonObject("layout").equals(expected), "Dashboard widget position or size lost");
+            } else check(widget.getAsJsonObject("layout").size() == 0, "Missing layout should use designer defaults");
+        }
+        JsonObject chart = report.getAsJsonArray("widgets").get(0).getAsJsonObject().getAsJsonObject("config").getAsJsonObject("chart");
+        check(chart.getAsJsonArray("yColumns").size() == 2 && chart.getAsJsonObject("yAxes").get("costos").getAsString().equals("right")
+            && chart.getAsJsonObject("marks").get("markLine").getAsBoolean(), "Converted chart options lost");
+        check(!converted.contains("secret") && !converted.contains("rows"), "Dashboard conversion leaked runtime data or credentials");
+        Path file = folder.resolve("converted.echarts-report.json");
+        ReportFiles.write(file, converted);
+        check(ReportFiles.read(file).equals(converted), "Converted dashboard cannot be saved and reopened");
+        check(Files.readString(DashboardFiles.sqlPath(file)).contains("SELECT fecha, SUM(ventas) AS ventas"), "Converted SQL companion lost");
+        JsonObject invalid = dashboard.deepCopy();
+        invalid.getAsJsonArray("widgets").get(0).getAsJsonObject().getAsJsonObject("layout").add("x", new JsonObject());
+        fail(() -> ReportFiles.fromDashboard(invalid.toString()));
     }
     private interface Action { void run() throws Exception; }
     private static void fail(Action action) throws Exception { try { action.run(); } catch (Exception expected) { return; } throw new AssertionError("Expected rejection"); }

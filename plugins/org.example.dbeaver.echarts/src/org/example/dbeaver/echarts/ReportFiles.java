@@ -138,7 +138,8 @@ final class ReportFiles {
             JsonObject old = element.getAsJsonObject(), query = old.getAsJsonObject("source").deepCopy();
             String sourceId = "query-" + ++index;
             query.addProperty("id", sourceId); report.getAsJsonArray("sources").add(query);
-            JsonObject component = fields(old, "id", "title", "layout");
+            JsonObject component = fields(old, "id", "title");
+            component.add("layout", fields(object(old, "layout"), "x", "y", "width", "height"));
             component.addProperty("type", "chart"); component.addProperty("sourceId", sourceId);
             JsonObject config = new JsonObject(); config.add("chart", old.getAsJsonObject("chart").deepCopy());
             component.add("config", config); report.getAsJsonArray("widgets").add(component);
