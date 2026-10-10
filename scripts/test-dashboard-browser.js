@@ -10,13 +10,24 @@ const root = path.resolve(__dirname, '..');
 
 async function main() {
   const fixture = JSON.parse(fs.readFileSync(path.join(root, 'dev/dashboards/control-ventas.echarts-dashboard.json'), 'utf8'));
-  const datasets = JSON.parse(fs.readFileSync(path.join(root, '.dev/mariadb-datasets.json'), 'utf8'));
+  // Deterministic data also works on a clean CI checkout without a local database dump.
+  const daily = {
+    columns: [{ name: 'fecha', kind: 'DATETIME' }, { name: 'ventas', kind: 'NUMERIC' }, { name: 'costos', kind: 'NUMERIC' }],
+    rows: Array.from({ length: 90 }, (_, index) => [
+      new Date(Date.UTC(2026, 6, index + 1)).toISOString(), 10000 + index * 50, 6000 + index * 30
+    ])
+  };
+  const cities = {
+    columns: [{ name: 'ciudad', kind: 'STRING' }, { name: 'longitud', kind: 'NUMERIC' },
+      { name: 'latitud', kind: 'NUMERIC' }, { name: 'ventas', kind: 'NUMERIC' }],
+    rows: [['Quito', -78.4678, -0.1807, 18000], ['Guayaquil', -79.889, -2.1894, 12000], ['Cuenca', -79.0059, -2.9001, 9000]]
+  };
   const browser = await chromium.launch({ channel: 'msedge', headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
-    await page.addInitScript(({ fixture, datasets }) => {
+    await page.addInitScript(({ fixture, daily, cities }) => {
       window.testSaves = [];
       window.testQueries = [];
       window.testDirty = 0;
@@ -34,7 +45,7 @@ async function main() {
         window.testQueries.push({ id, sql });
         const data = sql.includes('AS total_by_region')
           ? { columns: [{ name: 'region', kind: 'STRING' }, { name: 'total_by_region', kind: 'NUMERIC' }], rows: [['Costa', 12000], ['Sierra', 18000]] }
-          : datasets[id.includes('mapa') ? 8 : 0];
+          : id.includes('mapa') ? cities : daily;
         setTimeout(() => window.DBeaverECharts.setWidgetSnapshot(id, {
           ...data, schemaVersion: 1, rowCount: data.rows.length, exportedRowCount: data.rows.length,
           effectiveMaxRows: 5000, truncated: false
@@ -42,7 +53,7 @@ async function main() {
         return true;
       };
       window.dbeaverBrowserReady = () => { window.DBeaverECharts.loadDashboard(fixture, true); return true; };
-    }, { fixture, datasets });
+    }, { fixture, daily, cities });
     await page.goto(pathToFileURL(path.join(root, 'plugins/org.example.dbeaver.echarts/web/index.html')).href);
     assert.equal(await page.evaluate(() => window.testQueries.length), 0, 'Opening a dashboard must not execute SQL');
     await page.locator('#reviewDashboardSql').click();
