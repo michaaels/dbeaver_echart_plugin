@@ -42,7 +42,10 @@ representation because Outlook cannot run ECharts or modern grid layouts.
 - `report-export.js`: offline interactive HTML, static HTML and MIME EML drafts.
 - `report-designer.js`: visual editing, properties, source configuration, preview
   and composition. Native save/open dialogs stay in the SWT bridge.
-- `ReportFiles`: bounded UTF-8 JSON and generated SQL companions, atomic writes.
+- `ReportFiles`: bounded template normalization by parameters, sources, components,
+  configuration and section relationships; generated report SQL.
+- `DocumentFiles` / `JsonFields`: shared UTF-8 writes, SQL companion collision
+  protection and optional string fields, independent of dashboard/report formats.
 - `ReportParameters`: named parameters compiled to JDBC placeholders and bound
   values. Identifiers/SQL fragments cannot be parameters.
 - `ReportDesignerView` / `ReportEditor`: DBeaver workbench entry and file reopening.

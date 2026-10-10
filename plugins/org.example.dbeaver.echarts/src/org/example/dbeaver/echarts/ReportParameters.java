@@ -77,7 +77,7 @@ final class ReportParameters {
         return new Plan(query.toString(), List.copyOf(bindings));
     }
     private static Binding binding(JsonObject parameter) {
-        String type = DashboardFiles.string(parameter, "type"), value = DashboardFiles.string(parameter, "value");
+        String type = JsonFields.string(parameter, "type"), value = JsonFields.string(parameter, "value");
         if (value.length() > 2000) throw new IllegalArgumentException("Report parameter exceeds 2000 characters.");
         return switch (type) {
             case "text" -> new Binding(type, value);

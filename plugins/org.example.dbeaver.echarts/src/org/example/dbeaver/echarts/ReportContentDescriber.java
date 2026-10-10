@@ -12,7 +12,7 @@ public final class ReportContentDescriber implements IContentDescriber {
     @Override public int describe(InputStream contents, IContentDescription description) throws IOException {
         byte[] bytes = contents.readNBytes(ReportFiles.MAX_BYTES + 1);
         if (bytes.length > ReportFiles.MAX_BYTES) return INVALID;
-        try { return ReportFiles.FORMAT.equals(DashboardFiles.string(JsonParser.parseString(new String(bytes, StandardCharsets.UTF_8)).getAsJsonObject(), "format")) ? VALID : INVALID; }
+        try { return ReportFiles.FORMAT.equals(JsonFields.string(JsonParser.parseString(new String(bytes, StandardCharsets.UTF_8)).getAsJsonObject(), "format")) ? VALID : INVALID; }
         catch (RuntimeException invalid) { return INVALID; }
     }
     @Override public QualifiedName[] getSupportedOptions() { return new QualifiedName[0]; }

@@ -14,6 +14,7 @@ public final class ReportFilesTest {
         Path folder = Files.createTempDirectory("echarts-reports-test-");
         try {
             checkDashboardConversion(folder);
+            checkTableConfiguration();
             JsonObject report = JsonParser.parseString(ReportFiles.empty()).getAsJsonObject();
             report.addProperty("title", "Conexión y región\nResumen"); report.addProperty("password", "secret");
             JsonObject source = JsonParser.parseString("{\"id\":\"daily\",\"name\":\"Diario\",\"connectionId\":\"local\",\"sql\":\"SELECT 'niño' AS zona, :date AS fecha;\",\"password\":\"secret\",\"rows\":[[1]]}").getAsJsonObject();
@@ -22,7 +23,7 @@ public final class ReportFilesTest {
             report.getAsJsonArray("widgets").add(chart);
             Path file = folder.resolve("red.echarts-report.json");
             ReportFiles.write(file, report.toString());
-            String saved = ReportFiles.read(file), sql = Files.readString(DashboardFiles.sqlPath(file));
+            String saved = ReportFiles.read(file), sql = Files.readString(DocumentFiles.sqlPath(file));
             check(!saved.contains("secret") && !saved.contains("rows"), "Runtime/credentials escaped the template boundary");
             check(sql.contains("SELECT 'niño' AS zona, :date AS fecha;"), "Exact Unicode SQL lost");
             check(!sql.contains(";\n;"), "Duplicate SQL terminator");
@@ -37,7 +38,7 @@ public final class ReportFilesTest {
             chart.addProperty("sourceId", "missing"); fail(() -> ReportFiles.parse(report.toString())); chart.addProperty("sourceId", "daily");
             report.getAsJsonArray("widgets").add(chart.deepCopy()); fail(() -> ReportFiles.parse(report.toString())); report.getAsJsonArray("widgets").remove(1);
             chart.getAsJsonObject("config").addProperty("image", "data:image/svg+xml;base64,PHN2Zz4="); fail(() -> ReportFiles.parse(report.toString())); chart.getAsJsonObject("config").remove("image");
-            Files.writeString(DashboardFiles.sqlPath(file), "-- Manual SQL\nSELECT 1;"); fail(() -> ReportFiles.write(file, report.toString())); check(ReportFiles.read(file).equals(saved), "Companion collision changed JSON");
+            Files.writeString(DocumentFiles.sqlPath(file), "-- Manual SQL\nSELECT 1;"); fail(() -> ReportFiles.write(file, report.toString())); check(ReportFiles.read(file).equals(saved), "Companion collision changed JSON");
             fail(() -> ReportFiles.parse(" ".repeat(ReportFiles.MAX_BYTES + 1)));
             Path html = folder.resolve("report.html"); ReportFiles.export(html, "<p>Región</p>"); check(Files.readString(html).equals("<p>Región</p>"), "UTF-8 export");
             var describer = new ReportContentDescriber();
@@ -83,11 +84,43 @@ public final class ReportFilesTest {
         Path file = folder.resolve("converted.echarts-report.json");
         ReportFiles.write(file, converted);
         check(ReportFiles.read(file).equals(converted), "Converted dashboard cannot be saved and reopened");
-        check(Files.readString(DashboardFiles.sqlPath(file)).contains("SELECT fecha, SUM(ventas) AS ventas"), "Converted SQL companion lost");
+        check(Files.readString(DocumentFiles.sqlPath(file)).contains("SELECT fecha, SUM(ventas) AS ventas"), "Converted SQL companion lost");
         JsonObject invalid = dashboard.deepCopy();
         invalid.getAsJsonArray("widgets").get(0).getAsJsonObject().getAsJsonObject("layout").add("x", new JsonObject());
         fail(() -> ReportFiles.fromDashboard(invalid.toString()));
     }
+    private static void checkTableConfiguration() throws Exception {
+        JsonObject report = JsonParser.parseString(ReportFiles.empty()).getAsJsonObject();
+        report.getAsJsonArray("parameters").add(JsonParser.parseString(
+            "{\"name\":\"start_date\",\"type\":\"date\",\"default\":\"2026-10-01\",\"value\":\"2026-11-01\"}"));
+        report.getAsJsonArray("sources").add(JsonParser.parseString(
+            "{\"id\":\"daily\",\"sql\":\"SELECT fecha, ventas FROM sales WHERE fecha >= :start_date\"}"));
+        JsonObject table = JsonParser.parseString("""
+            {"id":"sales-table","type":"table","sourceId":"daily","layout":{"x":6,"y":2,"width":6,"height":26},
+             "config":{"pageSize":10,"totals":true,"sortColumn":"fecha","sortDirection":"desc","groupBy":"fecha",
+              "visibility":{"enabled":true,"column":"ventas","operator":"gt","value":"0","password":"secret"},
+              "columns":[{"name":"ventas","label":"Ventas netas","format":"currency","width":160,"align":"right","total":true,
+                "rule":{"enabled":true,"operator":"lt","value":"100","color":"#b42318","background":"#fff4f2"}}],
+              "rows":[["private result"]]}}
+            """).getAsJsonObject();
+        report.getAsJsonArray("widgets").add(table);
+        JsonObject saved = ReportFiles.parse(ReportFiles.canonical(report.toString()));
+        JsonObject restored = saved.getAsJsonArray("widgets").get(0).getAsJsonObject();
+        JsonObject config = restored.getAsJsonObject("config"), expected = table.getAsJsonObject("config");
+        check(restored.get("layout").equals(table.get("layout")), "Table height and position changed");
+        for (String field : new String[] { "pageSize", "totals", "sortColumn", "sortDirection", "groupBy", "columns" }) {
+            check(config.get(field).equals(expected.get(field)), "Table setting lost: " + field);
+        }
+        JsonObject visibility = expected.getAsJsonObject("visibility").deepCopy(); visibility.remove("password");
+        check(config.get("visibility").equals(visibility), "Visibility rule changed");
+        check(!config.has("rows") && !saved.toString().contains("secret"), "Runtime data or credentials persisted");
+        JsonObject parameter = saved.getAsJsonArray("parameters").get(0).getAsJsonObject();
+        check(parameter.get("default").getAsString().equals("2026-10-01") && !parameter.has("value"),
+            "Parameter definition and runtime value were mixed");
+        check(ReportFiles.canonical(saved.toString()).equals(ReportFiles.canonical(report.toString())),
+            "Normalized table settings changed on reopen");
+    }
+
     private interface Action { void run() throws Exception; }
     private static void fail(Action action) throws Exception { try { action.run(); } catch (Exception expected) { return; } throw new AssertionError("Expected rejection"); }
     private static void check(boolean condition, String message) { if (!condition) throw new AssertionError(message); }

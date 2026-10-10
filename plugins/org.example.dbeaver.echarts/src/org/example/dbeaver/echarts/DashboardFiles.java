@@ -8,10 +8,8 @@ import com.google.gson.JsonParser;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -31,7 +29,7 @@ final class DashboardFiles {
         JsonObject document = JsonParser.parseString(text).getAsJsonObject();
         if (!document.has("schemaVersion") || document.get("schemaVersion").getAsInt() != 1
             || !document.has("widgets") || !document.get("widgets").isJsonArray()
-            || (document.has("format") && !FORMAT.equals(string(document, "format")))) {
+            || (document.has("format") && !FORMAT.equals(JsonFields.string(document, "format")))) {
             throw new IllegalArgumentException("Unsupported ECharts dashboard format.");
         }
         if (document.getAsJsonArray("widgets").size() > 24) {
@@ -40,15 +38,15 @@ final class DashboardFiles {
         Set<String> ids = new HashSet<>();
         for (JsonElement element : document.getAsJsonArray("widgets")) {
             JsonObject widget = element.getAsJsonObject();
-            String id = string(widget, "id");
+            String id = JsonFields.string(widget, "id");
             if (id.isBlank() || !ids.add(id)) throw new IllegalArgumentException("Invalid or duplicate widget ID.");
             JsonObject source = widget.getAsJsonObject("source");
-            if (source == null || string(source, "sql").isBlank()) {
-                throw new IllegalArgumentException("Widget \"" + string(widget, "title") + "\" has no SQL. Assign it in Edit.");
+            if (source == null || JsonFields.string(source, "sql").isBlank()) {
+                throw new IllegalArgumentException("Widget \"" + JsonFields.string(widget, "title") + "\" has no SQL. Assign it in Edit.");
             }
             source.addProperty("kind", "savedQuery");
             JsonObject policy = widget.getAsJsonObject("refreshPolicy");
-            if (policy != null && "onResult".equals(string(policy, "mode"))) policy.addProperty("mode", "manual");
+            if (policy != null && "onResult".equals(JsonFields.string(policy, "mode"))) policy.addProperty("mode", "manual");
         }
         document.addProperty("format", FORMAT);
         return document;
@@ -61,28 +59,17 @@ final class DashboardFiles {
 
     static String canonical(String text) { return GSON.toJson(parse(text)); }
 
-    static String string(JsonObject value, String key) {
-        JsonElement element = value == null ? null : value.get(key);
-        return element != null && element.isJsonPrimitive() && element.getAsJsonPrimitive().isString()
-            ? element.getAsString() : "";
-    }
-
-    static Path sqlPath(Path file) {
-        String name = file.getFileName().toString();
-        return file.resolveSibling((name.endsWith(".json") ? name.substring(0, name.length() - 5) : name) + ".sql");
-    }
-
     static String sqlDocument(JsonObject document) {
-        StringBuilder sql = new StringBuilder("-- ECharts dashboard: " + comment(string(document, "title"))
+        StringBuilder sql = new StringBuilder("-- ECharts dashboard: " + comment(JsonFields.string(document, "title"))
             + "\n-- Generated from JSON. Edit widget queries with the dashboard Edit button.\n\n");
         for (JsonElement element : document.getAsJsonArray("widgets")) {
             JsonObject widget = element.getAsJsonObject();
             JsonObject source = widget.getAsJsonObject("source");
-            sql.append("-- Widget: ").append(comment(string(widget, "title"))).append(" [")
-                .append(comment(string(widget, "id"))).append("]\n-- Connection: ")
-                .append(comment(string(source, "project"))).append(" / ")
-                .append(comment(string(source, "connection"))).append('\n');
-            String query = string(source, "sql");
+            sql.append("-- Widget: ").append(comment(JsonFields.string(widget, "title"))).append(" [")
+                .append(comment(JsonFields.string(widget, "id"))).append("]\n-- Connection: ")
+                .append(comment(JsonFields.string(source, "project"))).append(" / ")
+                .append(comment(JsonFields.string(source, "connection"))).append('\n');
+            String query = JsonFields.string(source, "sql");
             sql.append(query).append(query.stripTrailing().endsWith(";") ? "\n\n" : "\n;\n\n");
         }
         return sql.toString();
@@ -94,31 +81,7 @@ final class DashboardFiles {
         JsonObject document = parse(text); // Validate before touching either file.
         String json = GSON.toJson(document) + "\n";
         if (json.getBytes(StandardCharsets.UTF_8).length > MAX_BYTES) throw new IOException("Dashboard JSON exceeds 1 MiB.");
-        Path companion = sqlPath(file);
-        if (Files.exists(companion)) {
-            try (var reader = Files.newBufferedReader(companion, StandardCharsets.UTF_8)) {
-                String firstLine = reader.readLine();
-                if (firstLine == null || !firstLine.startsWith("-- ECharts dashboard: ")) {
-                    throw new IOException("The SQL companion already exists and was not generated by ECharts. Choose another name.");
-                }
-            }
-        }
-        // Commit JSON last. A failed JSON write can leave an outdated generated companion;
-        // reopening always reads JSON, and saving it regenerates the SQL copy.
-        atomicWrite(sqlPath(file), sqlDocument(document));
-        atomicWrite(file, json);
-    }
-
-    static void atomicWrite(Path file, String text) throws IOException {
-        Path target = file.toAbsolutePath().normalize();
-        Path temporary = Files.createTempFile(target.getParent(), ".echarts-", ".tmp");
-        try {
-            Files.writeString(temporary, text, StandardCharsets.UTF_8);
-            try {
-                Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-            } catch (AtomicMoveNotSupportedException ignored) {
-                Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
-            }
-        } finally { Files.deleteIfExists(temporary); }
+        DocumentFiles.writeWithSqlCompanion(file, json, sqlDocument(document), "-- ECharts dashboard: ",
+            "The SQL companion already exists and was not generated by ECharts. Choose another name.");
     }
 }

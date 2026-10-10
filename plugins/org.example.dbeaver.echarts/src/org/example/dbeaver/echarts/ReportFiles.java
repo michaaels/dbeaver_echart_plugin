@@ -27,84 +27,123 @@ final class ReportFiles {
     static JsonObject parse(String text) {
         if (text == null || text.getBytes(StandardCharsets.UTF_8).length > MAX_BYTES) throw new IllegalArgumentException("Report template exceeds 8 MiB.");
         JsonObject input = JsonParser.parseString(text).getAsJsonObject();
-        if (!FORMAT.equals(DashboardFiles.string(input, "format")) || input.get("schemaVersion").getAsInt() != 1
+        if (!FORMAT.equals(JsonFields.string(input, "format")) || input.get("schemaVersion").getAsInt() != 1
             || !input.has("widgets") || !input.has("sources")) throw new IllegalArgumentException("Unsupported report template format.");
         JsonObject report = fields(input, "format", "schemaVersion", "title", "description", "category", "defaultTemplate");
         report.add("page", fields(object(input, "page"), "width", "margin", "gap", "background", "grid"));
+        report.add("parameters", normalizeParameters(input));
+        JsonArray sources = input.getAsJsonArray("sources"), widgets = input.getAsJsonArray("widgets");
+        if (sources.size() > 24 || widgets.size() > 64) throw new IllegalArgumentException("Report limit: 24 queries and 64 components.");
+        JsonArray cleanSources = normalizeSources(sources);
+        Set<String> sourceIds = new HashSet<>();
+        for (var source : cleanSources) sourceIds.add(JsonFields.string(source.getAsJsonObject(), "id"));
+        JsonArray cleanWidgets = normalizeWidgets(widgets, sourceIds);
+        validateSections(cleanWidgets);
+        report.add("sources", cleanSources); report.add("widgets", cleanWidgets);
+        return report;
+    }
+
+    private static JsonArray normalizeParameters(JsonObject input) {
         JsonArray parameters = input.has("parameters") ? input.getAsJsonArray("parameters") : new JsonArray();
         if (parameters.size() > 32) throw new IllegalArgumentException("Too many report parameters.");
         JsonArray cleanParameters = new JsonArray();
         Set<String> names = new HashSet<>();
         for (var element : parameters) {
             JsonObject parameter = fields(element.getAsJsonObject(), "name", "label", "type", "default");
-            String name = DashboardFiles.string(parameter, "name");
+            String name = JsonFields.string(parameter, "name");
             if (!name.matches("[A-Za-z_][A-Za-z_0-9]{0,63}") || !names.add(name)
-                || !Set.of("text", "number", "date", "boolean").contains(DashboardFiles.string(parameter, "type"))) {
+                || !Set.of("text", "number", "date", "boolean").contains(JsonFields.string(parameter, "type"))) {
                 throw new IllegalArgumentException("Invalid or duplicate report parameter.");
             }
             cleanParameters.add(parameter);
         }
-        report.add("parameters", cleanParameters);
-        JsonArray sources = input.getAsJsonArray("sources"), widgets = input.getAsJsonArray("widgets");
-        if (sources.size() > 24 || widgets.size() > 64) throw new IllegalArgumentException("Report limit: 24 queries and 64 components.");
-        JsonArray cleanSources = new JsonArray(), cleanWidgets = new JsonArray();
-        Set<String> sourceIds = new HashSet<>(), widgetIds = new HashSet<>();
+        return cleanParameters;
+    }
+
+    private static JsonArray normalizeSources(JsonArray sources) {
+        JsonArray cleanSources = new JsonArray();
+        Set<String> sourceIds = new HashSet<>();
         for (var element : sources) {
             JsonObject source = fields(element.getAsJsonObject(), "id", "name", "project", "connection", "connectionId", "sql", "maxRows");
-            String id = DashboardFiles.string(source, "id");
-            if (id.isBlank() || id.length() > 200 || !sourceIds.add(id) || DashboardFiles.string(source, "sql").length() > 100_000) {
+            String id = JsonFields.string(source, "id");
+            if (id.isBlank() || id.length() > 200 || !sourceIds.add(id) || JsonFields.string(source, "sql").length() > 100_000) {
                 throw new IllegalArgumentException("Invalid or duplicate report query.");
             }
             source.addProperty("kind", "savedQuery"); cleanSources.add(source);
         }
-        Map<String, JsonObject> components = new HashMap<>();
+        return cleanSources;
+    }
+
+    private static JsonArray normalizeWidgets(JsonArray widgets, Set<String> sourceIds) {
+        JsonArray cleanWidgets = new JsonArray();
+        Set<String> widgetIds = new HashSet<>();
         for (var element : widgets) {
             JsonObject inputWidget = element.getAsJsonObject();
             JsonObject widget = fields(inputWidget, "id", "type", "title", "parentId", "sourceId");
-            String id = DashboardFiles.string(widget, "id"), type = DashboardFiles.string(widget, "type"), sourceId = DashboardFiles.string(widget, "sourceId");
+            String id = JsonFields.string(widget, "id"), type = JsonFields.string(widget, "type"), sourceId = JsonFields.string(widget, "sourceId");
             if (id.isBlank() || id.length() > 200 || !widgetIds.add(id) || !TYPES.contains(type) || (!sourceId.isBlank() && !sourceIds.contains(sourceId))) {
                 throw new IllegalArgumentException("Invalid component or missing report source.");
             }
             widget.add("layout", fields(object(inputWidget, "layout"), "x", "y", "width", "height"));
             widget.add("style", fields(object(inputWidget, "style"), "color", "background", "borderColor", "borderWidth", "padding", "fontSize", "fontFamily", "align"));
-            JsonObject inputConfig = object(inputWidget, "config");
-            JsonObject config = fields(inputConfig, "text", "image", "alt", "column", "aggregate", "numberFormat", "decimals", "prefix", "suffix", "totals", "groupBy", "pageSize", "sortColumn", "sortDirection");
-            String image = DashboardFiles.string(config, "image");
-            if (!image.isBlank() && (!image.matches("data:image/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+") || image.length() > 2_800_000)) {
-                throw new IllegalArgumentException("Use a local PNG, JPEG, GIF or WebP image under 2 MiB.");
+            widget.add("config", normalizeConfig(object(inputWidget, "config")));
+            cleanWidgets.add(widget);
+        }
+        return cleanWidgets;
+    }
+
+    private static JsonObject normalizeConfig(JsonObject input) {
+        JsonObject config = fields(input, "text", "image", "alt", "column", "aggregate", "numberFormat", "decimals", "prefix", "suffix", "totals", "groupBy", "pageSize", "sortColumn", "sortDirection");
+        String image = JsonFields.string(config, "image");
+        if (!image.isBlank() && (!image.matches("data:image/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+") || image.length() > 2_800_000)) {
+            throw new IllegalArgumentException("Use a local PNG, JPEG, GIF or WebP image under 2 MiB.");
+        }
+        config.add("chart", normalizeChart(object(input, "chart")));
+        config.add("visibility", fields(object(input, "visibility"), "enabled", "column", "operator", "value"));
+        config.add("columns", normalizeColumns(input));
+        return config;
+    }
+
+    private static JsonObject normalizeChart(JsonObject input) {
+        JsonObject chart = fields(input, "chartType", "xColumn", "yColumns", "colors", "legend");
+        chart.add("marks", fields(object(input, "marks"), "markLine", "markArea", "visualMap"));
+        JsonObject axes = new JsonObject();
+        for (var axis : object(input, "yAxes").entrySet()) {
+            if (axis.getKey().length() <= 200 && axis.getValue().isJsonPrimitive()
+                && Set.of("left", "right").contains(axis.getValue().getAsString())) axes.add(axis.getKey(), axis.getValue().deepCopy());
+        }
+        chart.add("yAxes", axes);
+        return chart;
+    }
+
+    private static JsonArray normalizeColumns(JsonObject input) {
+        JsonArray columns = new JsonArray();
+        if (input.has("columns")) {
+            if (input.getAsJsonArray("columns").size() > 100) throw new IllegalArgumentException("Too many report table columns.");
+            for (var column : input.getAsJsonArray("columns")) {
+                JsonObject clean = fields(column.getAsJsonObject(), "name", "label", "format", "width", "align", "total");
+                clean.add("rule", fields(object(column.getAsJsonObject(), "rule"), "enabled", "operator", "value", "color", "background"));
+                columns.add(clean);
             }
-            JsonObject inputChart = object(inputConfig, "chart");
-            JsonObject chart = fields(inputChart, "chartType", "xColumn", "yColumns", "colors", "legend");
-            chart.add("marks", fields(object(inputChart, "marks"), "markLine", "markArea", "visualMap"));
-            JsonObject axes = new JsonObject();
-            for (var axis : object(inputChart, "yAxes").entrySet()) {
-                if (axis.getKey().length() <= 200 && axis.getValue().isJsonPrimitive()
-                    && Set.of("left", "right").contains(axis.getValue().getAsString())) axes.add(axis.getKey(), axis.getValue().deepCopy());
-            }
-            chart.add("yAxes", axes); config.add("chart", chart);
-            config.add("visibility", fields(object(inputConfig, "visibility"), "enabled", "column", "operator", "value"));
-            JsonArray columns = new JsonArray();
-            if (inputConfig.has("columns")) {
-                if (inputConfig.getAsJsonArray("columns").size() > 100) throw new IllegalArgumentException("Too many report table columns.");
-                for (var column : inputConfig.getAsJsonArray("columns")) {
-                    JsonObject clean = fields(column.getAsJsonObject(), "name", "label", "format", "width", "align", "total");
-                    clean.add("rule", fields(object(column.getAsJsonObject(), "rule"), "enabled", "operator", "value", "color", "background"));
-                    columns.add(clean);
-                }
-            }
-            config.add("columns", columns); widget.add("config", config); cleanWidgets.add(widget); components.put(id, widget);
+        }
+        return columns;
+    }
+
+    private static void validateSections(JsonArray widgets) {
+        Map<String, JsonObject> components = new HashMap<>();
+        for (var element : widgets) {
+            JsonObject widget = element.getAsJsonObject();
+            components.put(JsonFields.string(widget, "id"), widget);
         }
         for (JsonObject widget : components.values()) {
             JsonObject ancestor = widget;
-            for (int depth = 0; !DashboardFiles.string(ancestor, "parentId").isBlank(); depth++) {
-                ancestor = components.get(DashboardFiles.string(ancestor, "parentId"));
-                if (ancestor == null || ancestor == widget || depth >= 3 || !Set.of("section", "header", "footer").contains(DashboardFiles.string(ancestor, "type"))) {
+            for (int depth = 0; !JsonFields.string(ancestor, "parentId").isBlank(); depth++) {
+                ancestor = components.get(JsonFields.string(ancestor, "parentId"));
+                if (ancestor == null || ancestor == widget || depth >= 3 || !Set.of("section", "header", "footer").contains(JsonFields.string(ancestor, "type"))) {
                     throw new IllegalArgumentException("Invalid or cyclic report section.");
                 }
             }
         }
-        report.add("sources", cleanSources); report.add("widgets", cleanWidgets);
-        return report;
     }
     private static JsonObject object(JsonObject input, String name) {
         return input.has(name) && input.get(name).isJsonObject() ? input.getAsJsonObject(name) : new JsonObject();
@@ -132,7 +171,7 @@ final class ReportFiles {
     }
     static String fromDashboard(String text) {
         JsonObject dashboard = JsonParser.parseString(text).getAsJsonObject(), report = JsonParser.parseString(empty()).getAsJsonObject();
-        report.addProperty("title", DashboardFiles.string(dashboard, "title"));
+        report.addProperty("title", JsonFields.string(dashboard, "title"));
         int index = 0;
         for (var element : dashboard.getAsJsonArray("widgets")) {
             JsonObject old = element.getAsJsonObject(), query = old.getAsJsonObject("source").deepCopy();
@@ -150,33 +189,30 @@ final class ReportFiles {
         JsonObject report = parse(text);
         String json = GSON.toJson(report) + "\n";
         if (json.getBytes(StandardCharsets.UTF_8).length > MAX_BYTES) throw new IOException("Report template exceeds 8 MiB.");
-        Path companion = DashboardFiles.sqlPath(path);
-        if (Files.exists(companion)) {
-            try (var reader = Files.newBufferedReader(companion, StandardCharsets.UTF_8)) {
-                String first = reader.readLine();
-                if (first == null || !first.startsWith("-- ECharts report:")) throw new IOException("The SQL companion is not an ECharts report file. Choose another name.");
-            }
-        }
-        StringBuilder sql = new StringBuilder("-- ECharts report: " + DashboardFiles.string(report, "title").replaceAll("[\\r\\n]", " ") + "\n-- Generated from the report JSON.\n\n");
+        DocumentFiles.writeWithSqlCompanion(path, json, sqlDocument(report), "-- ECharts report:",
+            "The SQL companion is not an ECharts report file. Choose another name.");
+    }
+
+    private static String sqlDocument(JsonObject report) {
+        StringBuilder sql = new StringBuilder("-- ECharts report: " + JsonFields.string(report, "title").replaceAll("[\\r\\n]", " ") + "\n-- Generated from the report JSON.\n\n");
         for (var element : report.getAsJsonArray("sources")) {
             JsonObject source = element.getAsJsonObject();
-            String query = DashboardFiles.string(source, "sql").stripTrailing();
-            sql.append("-- Query: ").append(DashboardFiles.string(source, "name").replaceAll("[\\r\\n]", " ")).append('\n')
+            String query = JsonFields.string(source, "sql").stripTrailing();
+            sql.append("-- Query: ").append(JsonFields.string(source, "name").replaceAll("[\\r\\n]", " ")).append('\n')
                 .append(query).append(query.endsWith(";") ? "\n\n" : "\n;\n\n");
         }
-        DashboardFiles.atomicWrite(companion, sql.toString());
-        DashboardFiles.atomicWrite(path, json);
+        return sql.toString();
     }
     static void export(Path path, String content) throws IOException {
         if (content.getBytes(StandardCharsets.UTF_8).length > MAX_EXPORT_BYTES) throw new IOException("Generated report exceeds 32 MiB. Reduce rows or image sizes.");
-        DashboardFiles.atomicWrite(path, content);
+        DocumentFiles.atomicWrite(path, content);
     }
     static void updateDefault(Path folder, Path file, boolean enabled) throws IOException {
         Path root = folder.toAbsolutePath().normalize(), target = file.toAbsolutePath().normalize();
         if (!target.startsWith(root)) return;
         Path marker = root.resolve(".default-template");
         String relative = root.relativize(target).toString();
-        if (enabled) DashboardFiles.atomicWrite(marker, relative);
+        if (enabled) DocumentFiles.atomicWrite(marker, relative);
         else if (Files.exists(marker) && Files.size(marker) <= 4096 && Files.readString(marker).trim().equals(relative)) Files.delete(marker);
     }
 }

@@ -42,11 +42,11 @@ public final class DashboardFilesTest {
             JsonObject read = DashboardFiles.parse(DashboardFiles.read(file));
             check(read.get("format").getAsString().equals(DashboardFiles.FORMAT), "Legacy format upgraded");
             JsonObject restored = read.getAsJsonArray("widgets").get(0).getAsJsonObject();
-            check(DashboardFiles.string(restored.getAsJsonObject("source"), "sql").equals(query), "Exact Unicode SQL");
-            check(DashboardFiles.string(restored.getAsJsonObject("source"), "kind").equals("savedQuery"), "Independent source");
-            check(DashboardFiles.string(restored.getAsJsonObject("chart"), "chartType").equals("map"), "Map configuration");
+            check(JsonFields.string(restored.getAsJsonObject("source"), "sql").equals(query), "Exact Unicode SQL");
+            check(JsonFields.string(restored.getAsJsonObject("source"), "kind").equals("savedQuery"), "Independent source");
+            check(JsonFields.string(restored.getAsJsonObject("chart"), "chartType").equals("map"), "Map configuration");
             check(restored.getAsJsonObject("layout").equals(layout), "Position and size survive file round trip");
-            Path sql = DashboardFiles.sqlPath(file);
+            Path sql = DocumentFiles.sqlPath(file);
             check(sql.getFileName().toString().equals("control.echarts-dashboard.sql"), "Distinct SQL companion");
             String companion = Files.readString(sql);
             check(companion.contains(query), "SQL preserved in companion");

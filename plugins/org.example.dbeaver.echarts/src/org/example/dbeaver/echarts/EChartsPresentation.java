@@ -576,7 +576,7 @@ public final class EChartsPresentation extends AbstractPresentation {
             FileDialog dialog = new FileDialog(browser.getShell(), SWT.SAVE);
             dialog.setText("Save ECharts dashboard (JSON and SQL)");
             dialog.setFilterPath(folder.toString());
-            String name = DashboardFiles.string(dashboard, "title").replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", "_")
+            String name = JsonFields.string(dashboard, "title").replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", "_")
                 .replaceAll("[ .]+$", "");
             if (name.isBlank()) name = "dashboard";
             dialog.setFileName(name + DashboardFiles.SUFFIX);
@@ -739,8 +739,8 @@ public final class EChartsPresentation extends AbstractPresentation {
                     for (Path file : files.filter(path -> Files.isRegularFile(path) && path.getFileName().toString().endsWith(ReportFiles.SUFFIX)).limit(500).toList()) {
                         try {
                             JsonObject report = ReportFiles.parse(ReportFiles.read(file));
-                            templates.add(Map.of("path", folder.relativize(file).toString(), "title", DashboardFiles.string(report, "title"),
-                                "category", DashboardFiles.string(report, "category"), "description", DashboardFiles.string(report, "description")));
+                            templates.add(Map.of("path", folder.relativize(file).toString(), "title", JsonFields.string(report, "title"),
+                                "category", JsonFields.string(report, "category"), "description", JsonFields.string(report, "description")));
                         } catch (Exception ignored) { /* Invalid templates stay visible in DBeaver's Files navigator. */ }
                     }
                 } catch (Exception error) { throw new IllegalStateException(error); }
@@ -820,7 +820,7 @@ public final class EChartsPresentation extends AbstractPresentation {
             if (file == null || saveAs) {
                 Path folder = reportFolder(); Files.createDirectories(folder);
                 FileDialog dialog = reportDialog(SWT.SAVE, "Save report template (JSON and SQL)", "*.echarts-report.json");
-                dialog.setFileName(fileName(DashboardFiles.string(report, "title")) + ReportFiles.SUFFIX); dialog.setOverwrite(true);
+                dialog.setFileName(fileName(JsonFields.string(report, "title")) + ReportFiles.SUFFIX); dialog.setOverwrite(true);
                 String selected = dialog.open(); if (selected == null) return null;
                 file = Path.of(selected);
             } else if (!Files.exists(file) || !Files.readString(file, StandardCharsets.UTF_8).equals(reportDiskText)) {

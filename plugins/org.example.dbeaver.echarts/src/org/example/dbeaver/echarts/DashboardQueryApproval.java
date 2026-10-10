@@ -18,8 +18,8 @@ final class DashboardQueryApproval {
             Map<String, String> additions = new HashMap<>();
             for (var item : queries) {
                 JsonObject query = item.getAsJsonObject();
-                String id = DashboardFiles.string(query, "id");
-                String sql = DashboardFiles.string(query, "sql");
+                String id = JsonFields.string(query, "id");
+                String sql = JsonFields.string(query, "sql");
                 if (id.isBlank() || id.length() > 200 || sql.isBlank() || sql.length() > 1_000_000
                     || additions.containsKey(id)) return false;
                 additions.put(id, signature(sql, query.getAsJsonObject("source")));
@@ -41,7 +41,7 @@ final class DashboardQueryApproval {
         JsonArray parts = new JsonArray();
         parts.add(sql);
         for (String field : new String[] {"kind", "project", "connectionId", "connection"}) {
-            parts.add(DashboardFiles.string(source, field));
+            parts.add(JsonFields.string(source, field));
         }
         // Report approvals also bind typed values and per-source row limits.
         if (source.has("parameters")) parts.add(source.get("parameters"));
