@@ -127,5 +127,5 @@ Consulta [desarrollo](docs/DEVELOPMENT.md), [build](docs/BUILD.md) y
 ## Licencias
 
 Los recursos de terceros tienen versiones y hashes fijados. Licencias, avisos y
-procedencia están en [third-party/](third-party/); los scripts de actualización
+procedencia están en [third-party/](plugins/org.example.dbeaver.echarts/third-party/); los scripts de actualización
 están en `scripts/`.
