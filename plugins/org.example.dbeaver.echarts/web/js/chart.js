@@ -1,9 +1,7 @@
 (() => {
   'use strict';
 
-  const CHART_TYPES = new Set([
-    'line', 'area', 'bar', 'scatter', 'pie', 'gauge', 'radar', 'heatmap', 'boxplot', 'treemap', 'funnel', 'map'
-  ]);
+  const CHART_TYPES = new Set(window.DBeaverEChartsAnalytics.CHART_TYPES.map(type => type.id));
   const DEFAULT_THEME = {
     background: '#ffffff',
     foreground: '#333333',

@@ -157,23 +157,7 @@ public final class EChartsPresentation extends AbstractPresentation {
             browser.addLocationListener(new LocationAdapter() {
                 @Override
                 public void changing(LocationEvent event) {
-                    String location = event.location;
-                    if (location == null || location.isBlank() || "about:blank".equalsIgnoreCase(location)) {
-                        return;
-                    }
-                    try {
-                        URI uri = URI.create(location);
-                        if (!"file".equalsIgnoreCase(uri.getScheme())) {
-                            event.doit = false;
-                            return;
-                        }
-                        Path requestedPath = Paths.get(uri).toAbsolutePath().normalize();
-                        if (!requestedPath.startsWith(allowedRoot)) {
-                            event.doit = false;
-                        }
-                    } catch (Exception e) {
-                        event.doit = false;
-                    }
+                    event.doit = BrowserNavigation.allows(event.location, event.top, allowedRoot);
                 }
             });
             browser.addProgressListener(new ProgressAdapter() {

@@ -41,10 +41,27 @@ async function main() {
     await page.goto(pathToFileURL(path.join(web, 'report.html')).href);
     const document = () => page.evaluate(() => window.DBeaverECharts.reportDocument());
     const properties = page.locator('#componentProperties');
+    // Reproduce the gap left after deleting a component above existing content.
+    await page.evaluate(() => {
+      const M = window.DBeaverReportModel, report = M.create('Delete regression');
+      const table = M.widget('table'), heading = M.widget('heading');
+      table.id = 'remove-me'; heading.id = 'keep-me'; heading.layout.y = table.layout.height;
+      report.widgets.push(table, heading); window.DBeaverECharts.loadReport(report);
+    });
+    await page.locator('[data-layer-id="remove-me"]').click();
+    await properties.getByRole('button', { name: 'Delete', exact: true }).click();
+    assert.equal((await document()).widgets[0].layout.y, 0, 'Deleting the first component reclaims the space');
+    await page.locator('#undoReport').click();
+    assert.equal((await document()).widgets.find(w => w.id === 'keep-me').layout.y, 8, 'Undo restores the original layout');
+    await page.locator('#redoReport').click();
+    assert.equal((await document()).widgets[0].layout.y, 0);
+    await page.evaluate(() => window.DBeaverECharts.loadReport(window.DBeaverReportModel.create()));
     await page.locator('#reportTitle').fill('Reporte diario de ventas');
     await page.locator('[data-component-type="heading"]').click();
     await properties.getByLabel('Text', { exact: true }).fill('Ventas · {{start_date}}');
+    const headingLayout = (await document()).widgets[0].layout;
     await page.locator('[data-component-type="image"]').click();
+    assert.deepEqual((await document()).widgets[0].layout, headingLayout, 'Click-to-add preserves existing positions');
     await properties.getByRole('button', { name: 'Choose local image', exact: true }).click();
     assert.ok((await document()).widgets.find(widget => widget.type === 'image').config.image.startsWith('data:image/png'));
     await page.locator('#reportParameters').click();
@@ -154,9 +171,24 @@ async function main() {
       await page.locator('#exportReport').click(); await page.locator('#reportExportFormat').selectOption(mode); await page.locator('#saveReportExport').click();
     }
     await page.locator('#outlookReport').click();
+    const emailPreview = page.frameLocator('#reportEmailPreview');
+    await emailPreview.getByText('Ventas y costos diarios', { exact: true }).waitFor();
+    assert.ok(await emailPreview.locator('img').evaluateAll(images => images.every(image => image.complete && image.naturalWidth > 0)), 'Email preview includes loaded chart and logo images');
+    assert.equal(await page.locator('.report-check').first().evaluate(label => getComputedStyle(label).display), 'flex', 'Checkbox remains beside its label');
+    const previewBox = await page.locator('#reportEmailPreview').boundingBox();
+    assert.ok(previewBox.width > 250 && previewBox.height > 200 && previewBox.y + previewBox.height <= 1100, 'Preview is visible alongside draft fields');
+    const outputDirectory = path.join(root, '.dev/screenshots'); fs.mkdirSync(outputDirectory, { recursive: true });
+    await page.screenshot({ path: path.join(outputDirectory, 'report-email-compose.png') });
     await page.locator('#reportEmailTo').fill('review@example.com');
     await page.locator('#reportEmailCc').fill('control@example.com');
     await page.locator('#reportEmailMessage').fill('Reporte para revisión.');
+    await page.locator('#reportEmailMessage').press('Tab');
+    await emailPreview.getByText('Reporte para revisión.', { exact: true }).waitFor();
+    await page.setViewportSize({ width: 600, height: 700 });
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Email dialog stays within a narrow window');
+    const saveEmailBox = await page.locator('#saveReportEmail').boundingBox();
+    assert.ok(saveEmailBox.y + saveEmailBox.height <= 700, 'Save stays visible while the draft fields scroll');
+    await page.setViewportSize({ width: 1700, height: 1100 });
     await page.locator('#reportEmailTo').fill('invalid'); await page.locator('#saveReportEmail').click();
     assert.match(await page.locator('#reportEmailError').textContent(), /email addresses/);
     await page.locator('#reportEmailTo').fill('review@example.com');

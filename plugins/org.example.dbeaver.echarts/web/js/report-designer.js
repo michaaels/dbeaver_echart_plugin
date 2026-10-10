@@ -91,10 +91,15 @@
   }
   function render() { renderControls(); renderCanvas(); renderProperties(); renderLayers(); }
   function add(type, position, parentId = null) {
+    if (!position) parentId = W.registry.get(first()?.type)?.container ? first().id : first()?.parentId || null;
     const widget = M.widget(type); widget.parentId = parentId;
-    if (position) Object.assign(widget.layout, position); else { widget.layout.x = null; widget.layout.y = null; }
+    if (position) Object.assign(widget.layout, position);
+    else widget.layout.y = Math.max(0, ...current().widgets.filter(item => item.parentId === parentId).map(item => item.layout.y + item.layout.height));
     selected = new Set([widget.id]);
-    if (change(draft => { draft.widgets.push(widget); draft.priorityId = widget.id; })) status(`Added ${W.registry.get(type).label}. Select it to edit its properties.`);
+    if (change(draft => { draft.widgets.push(widget); draft.priorityId = widget.id; })) {
+      status(`Added ${W.registry.get(type).label}${parentId ? ' to the section' : ' at the end'}. Edit its properties on the right.`);
+      $('reportCanvas').querySelector(`[data-component-id="${widget.id}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
   }
   function descendants(ids) {
     const result = new Set(ids); let changed = true;
@@ -128,7 +133,13 @@
     });
   }
   function remove() {
-    const ids = descendants(selected); change(draft => { draft.widgets = draft.widgets.filter(widget => !ids.has(widget.id)); }); selected.clear(); renderProperties();
+    const ids = descendants(selected);
+    if (!ids.size) return;
+    change(draft => {
+      const parents = new Set(draft.widgets.filter(widget => ids.has(widget.id)).map(widget => widget.parentId || null));
+      draft.widgets = draft.widgets.filter(widget => !ids.has(widget.id)); M.compact(draft.widgets, parents);
+    });
+    selected.clear(); renderProperties(); status('Component deleted. Space reclaimed; Undo restores the previous layout.');
   }
   function align(direction) {
     const widgets = current().widgets.filter(widget => selected.has(widget.id));
@@ -365,8 +376,15 @@
     else status('Export cancelled or unavailable.');
   }
   function composeEmail() {
-    try { const generated = exports(); email = { html: generated.email(), interactive: generated.interactive }; $('reportEmailError').textContent = ''; $('reportEmailSubject').value = current().title; $('reportEmailPreview').srcdoc = email.html; showDialog('reportEmailDialog'); }
+    try {
+      if (!current().widgets.length) throw new Error('Add a component before composing an email draft.');
+      const generated = exports(); email = { html: generated.email(), interactive: generated.interactive };
+      $('reportEmailError').textContent = ''; $('reportEmailSubject').value = current().title; updateEmailPreview(); showDialog('reportEmailDialog');
+    }
     catch (error) { status(error.message, true); }
+  }
+  function updateEmailPreview() {
+    if (email) $('reportEmailPreview').srcdoc = window.DBeaverReportExport.withMessage(email.html, $('reportEmailMessage').value);
   }
   function templates() {
     let entries = []; try { entries = JSON.parse(window.dbeaverListReportTemplates?.() || '[]'); } catch (error) { status(error.message, true); }
@@ -410,6 +428,7 @@
     click('importReport', () => { const document = window.dbeaverImportReport?.(); if (document) createDocument(typeof document === 'string' ? JSON.parse(document) : document); });
     click('undoReport', () => { history.undo(); execution.reconcile(current(), values); notifyChanges(); render(); });
     click('redoReport', () => { history.redo(); execution.reconcile(current(), values); notifyChanges(); render(); });
+    click('compactReport', () => { if (change(draft => M.compact(draft.widgets))) status('Vertical gaps closed. Columns and sizes retained; Undo restores the previous layout.'); });
     $('reportTitle').addEventListener('input', () => change(draft => { draft.title = $('reportTitle').value; }, { mergeKey: 'report.title', render: false }));
     $('reportZoom').addEventListener('change', () => { zoom = Number($('reportZoom').value); renderCanvas(); });
     click('reportData', () => showData()); click('reportParameters', () => { renderParameters(); showDialog('reportParameterDialog'); });
@@ -420,6 +439,7 @@
     click('runReportQueries', () => { $('reportReviewDialog').close(); try { execution.run(current(), values, reviewed); } catch (error) { generating = false; throw error; } });
     $('reportReviewDialog').addEventListener('cancel', () => { generating = false; });
     click('previewReport', showPreview); click('exportReport', () => showDialog('reportExportDialog')); click('outlookReport', composeEmail); click('reportTemplates', templates);
+    $('reportEmailMessage').addEventListener('change', updateEmailPreview);
     click('saveReportExport', () => {
       const mode = $('reportExportFormat').value; exportFile(mode === 'template' ? JSON.stringify(current()) : exports()[mode](), mode); $('reportExportDialog').close();
     });

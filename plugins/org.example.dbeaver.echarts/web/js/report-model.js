@@ -111,6 +111,28 @@
     const groups = new Set(widgets.map(item => item.parentId || null));
     for (const parent of groups) layout.placeWidgets(widgets.filter(item => (item.parentId || null) === parent), priorityId, BOUNDS);
   }
+  // Close vertical gaps without changing columns, sizes or the order of rows.
+  // Components sharing a row stay aligned; each section has its own flow.
+  function compact(widgets, parents = new Set(widgets.map(item => item.parentId || null))) {
+    for (const parent of parents) {
+      const rows = new Map(), placed = [];
+      for (const widget of widgets.filter(item => (item.parentId || null) === parent)) {
+        if (!rows.has(widget.layout.y)) rows.set(widget.layout.y, []);
+        rows.get(widget.layout.y).push(widget);
+      }
+      for (const [previousY, row] of [...rows].sort(([a], [b]) => a - b)) {
+        let y = 0;
+        for (const widget of row) {
+          for (const above of placed) {
+            if (widget.layout.x < above.x + above.width && widget.layout.x + widget.layout.width > above.x) {
+              y = Math.max(y, above.y + above.height);
+            }
+          }
+        }
+        for (const widget of row) { widget.layout.y = Math.min(previousY, y); placed.push(widget.layout); }
+      }
+    }
+  }
   function fromDashboard(dashboard) {
     const result = create(dashboard.title || 'Report from dashboard');
     for (const item of dashboard.widgets || []) {
@@ -164,5 +186,5 @@
     };
   }
   window.DBeaverReportModel = Object.freeze({ FORMAT, TYPES, BOUNDS, create, widget, source, normalize, fromDashboard, clone, id,
-    history, place, signature, runtimeSource, image });
+    history, place, compact, signature, runtimeSource, image });
 })();

@@ -47,6 +47,10 @@ jobs:
           ./scripts/validate.ps1 -DBeaverPlugins .dev/ci-target/dbeaver/dbeaver/plugins
           node scripts/test-chart-labels.js
           if ($LASTEXITCODE -ne 0) { throw 'Chart label geometry tests failed' }
+          node scripts/test-chart-catalog.js
+          if ($LASTEXITCODE -ne 0) { throw 'Chart catalog rendering and export tests failed' }
+          node scripts/test-dashboard-browser.js
+          if ($LASTEXITCODE -ne 0) { throw 'Dashboard authoring tests failed' }
           node scripts/test-dashboard-resize.js
           if ($LASTEXITCODE -ne 0) { throw 'Dashboard UX and edge resize tests failed' }
           node scripts/test-report-designer.js

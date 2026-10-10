@@ -90,7 +90,7 @@ if plugins:
                 check=True,
             )
             classpath = os.pathsep.join((output, str(plugins / '*')))
-            tests = ['DashboardFilesTest', 'DashboardQueryControlsTest']
+            tests = ['DashboardFilesTest', 'DashboardQueryControlsTest', 'ReportFilesTest', 'ReportParametersTest', 'BrowserNavigationTest']
             subprocess.run([javac, '-encoding', 'UTF-8', '-source', '21', '-target', '21', '-cp', classpath,
                             '-d', output, *[f'scripts/tests/{test}.java' for test in tests]], check=True)
             for test in tests:

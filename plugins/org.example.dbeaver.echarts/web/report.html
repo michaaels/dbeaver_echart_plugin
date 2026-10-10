@@ -12,6 +12,7 @@
       <div class="report-actions">
         <button id="newReport" type="button">New</button><button id="openReport" type="button">Open template</button><button id="saveReport" type="button" class="report-primary">Save</button>
         <button id="undoReport" type="button" title="Ctrl+Z">Undo</button><button id="redoReport" type="button" title="Ctrl+Y">Redo</button>
+        <button id="compactReport" type="button" title="Close vertical gaps while keeping columns and sizes. Supports Undo.">Close gaps</button>
         <button id="reportData" type="button">Data</button><button id="reportParameters" type="button">Parameters</button>
         <button id="refreshReport" type="button">Refresh data</button><button id="stopReport" type="button" hidden>Stop queries</button>
         <button id="previewReport" type="button">Preview</button><button id="generateReport" type="button">Generate report</button>
@@ -21,7 +22,7 @@
       <div id="reportStatus" role="status">Add a component to start designing your report.</div>
     </header>
     <div class="report-workspace">
-      <aside class="report-library" aria-label="Component library"><h2>Components</h2><p>Drag onto the sheet or click to add.</p><div id="componentLibrary"></div>
+      <aside class="report-library" aria-label="Component library"><h2>Components</h2><p>Click to append. Drag onto the sheet to choose a position. Select a section to add inside it.</p><div id="componentLibrary"></div>
         <h2>Layers</h2><div id="reportLayers"></div><button id="duplicateReport" type="button">Duplicate template</button><button id="importReport" type="button">Import template</button>
       </aside>
       <section class="report-canvas-scroll" aria-label="Report design canvas"><div id="reportStage" class="report-stage"><div id="reportCanvas"></div></div>
@@ -52,11 +53,18 @@
   </dialog>
   <dialog id="reportEmailDialog" class="report-dialog email" aria-labelledby="reportEmailHeading"><h2 id="reportEmailHeading">Compose Outlook draft</h2>
     <p>Creates an EML draft with inline chart images. The plugin does not send email. Editing the saved draft depends on your mail client.</p>
-    <div class="report-form-grid"><label>To<input id="reportEmailTo" type="text" placeholder="name@example.com"></label><label>CC<input id="reportEmailCc" type="text"></label></div>
-    <label>Subject<input id="reportEmailSubject" maxlength="200"></label><label>Message<textarea id="reportEmailMessage" rows="3"></textarea></label>
-    <label class="report-check"><input id="reportEmailAttach" type="checkbox" checked> Attach offline interactive HTML</label>
-    <label class="report-check"><input id="reportEmailOpen" type="checkbox"> Open saved EML with the registered mail client</label>
-    <iframe id="reportEmailPreview" title="Email report preview" sandbox=""></iframe>
+    <div class="report-email-content">
+      <section class="report-email-fields" aria-label="Draft details">
+        <div class="report-form-grid"><label>To<input id="reportEmailTo" type="text" placeholder="name@example.com"></label><label>CC<input id="reportEmailCc" type="text"></label></div>
+        <label>Subject<input id="reportEmailSubject" maxlength="200"></label><label>Message<textarea id="reportEmailMessage" rows="3"></textarea></label>
+        <label class="report-check"><input id="reportEmailAttach" type="checkbox" checked> Attach offline interactive HTML</label>
+        <label class="report-check"><input id="reportEmailOpen" type="checkbox"> Open saved EML with the registered mail client</label>
+      </section>
+      <section class="report-email-preview" aria-labelledby="reportEmailPreviewHeading">
+        <h3 id="reportEmailPreviewHeading" class="report-email-preview-heading">Email preview <span>Charts are embedded as images</span></h3>
+        <iframe id="reportEmailPreview" title="Email report preview" sandbox="" referrerpolicy="no-referrer"></iframe>
+      </section>
+    </div>
     <p id="reportEmailError" class="report-data-error" role="alert"></p>
     <footer><button id="saveReportEmail" type="button" class="report-primary">Save email draft</button><button data-close="reportEmailDialog" type="button">Cancel</button></footer>
   </dialog>
@@ -66,7 +74,7 @@
   </dialog>
   <dialog id="reportConfirmDialog" class="report-dialog small" aria-labelledby="reportConfirmHeading"><h2 id="reportConfirmHeading">Discard unsaved changes?</h2><p>Save the template first to keep your design.</p>
     <footer><button id="reportConfirmDiscard" type="button">Discard and continue</button><button data-close="reportConfirmDialog" type="button">Cancel</button></footer></dialog>
-  <select id="chartType" hidden><option value="line">Line</option><option value="bar">Bar</option><option value="pie">Pie</option><option value="scatter">Scatter</option><option value="area">Area</option><option value="histogram">Histogram</option><option value="boxplot">Boxplot</option><option value="heatmap">Heatmap</option><option value="gauge">Gauge</option><option value="candlestick">Candlestick</option><option value="treemap">Treemap</option><option value="funnel">Funnel</option><option value="radar">Radar</option><option value="map">Map</option></select>
+  <select id="chartType" hidden aria-label="Available charts"></select>
   <dialog id="widgetEditor" class="widget-editor" aria-labelledby="widgetEditorHeading">
     <h2 id="widgetEditorHeading">Edit chart</h2><div class="widget-editor-fields"><label>Title<input id="widgetEditorName" maxlength="200"></label><label>Connection<select id="widgetEditorConnection"></select></label></div>
     <label class="widget-editor-query">SQL for this chart<textarea id="widgetEditorSql" spellcheck="false" aria-label="Widget SQL"></textarea></label>

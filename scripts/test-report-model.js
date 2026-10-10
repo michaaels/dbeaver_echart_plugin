@@ -29,6 +29,23 @@ assert.equal(M.runtimeSource(clean, source, {}).parameters.start_date.value, '20
 const imported = M.fromDashboard({ title: 'Existing', widgets: [{ id: 'existing', title: 'Daily totals', source, layout: { x: 0, y: 0, width: 6, height: 8 }, chart: { chartType: 'bar', xColumn: 'fecha', yColumns: ['total'], yAxes: { total: 'right' }, marks: { markLine: true } } }] });
 assert.equal(imported.sources[0].sql, source.sql); assert.equal(imported.widgets[0].config.chart.yAxes.total, 'right'); assert.equal(imported.widgets[0].config.chart.marks.markLine, true);
 const history = M.history(report);
+
+const flow = M.create('Two-column flow');
+function component(id, x, y, width, height, parentId = null) {
+  const widget = M.widget('text'); Object.assign(widget, { id, parentId, layout: { x, y, width, height } }); return widget;
+}
+flow.widgets = [component('title', 0, 8, 12, 2), component('left', 0, 13, 7, 5), component('right', 7, 13, 5, 8),
+  component('bottom', 0, 25, 12, 2), { ...component('section', 0, 30, 12, 12), type: 'section' },
+  component('child', 0, 5, 6, 2, 'section')];
+const original = M.normalize(flow);
+assert.equal(original.widgets[0].layout.y, 8, 'Opening a template preserves intentional whitespace');
+M.compact(flow.widgets, new Set([null]));
+assert.deepEqual(flow.widgets.map(w => w.layout.y), [0, 2, 2, 10, 12, 5], 'Delete compaction preserves aligned rows and only changes the affected section');
+assert.deepEqual(flow.widgets.map(w => [w.layout.x, w.layout.width, w.layout.height]), original.widgets.map(w => [w.layout.x, w.layout.width, w.layout.height]));
+M.compact(flow.widgets);
+assert.equal(flow.widgets.at(-1).layout.y, 0, 'Close gaps also compacts nested sections');
+const compacted = JSON.stringify(flow); M.compact(flow.widgets); assert.equal(JSON.stringify(flow), compacted, 'Compaction is stable');
+assert.deepEqual(Array.from(M.normalize(flow).widgets, w => w.layout.y), flow.widgets.map(w => w.layout.y), 'Compacted layout reopens without overlaps or displacement');
 history.change(draft => { draft.title = 'One'; }, 'title'); history.change(draft => { draft.title = 'Two'; }, 'title');
 history.undo(); assert.equal(history.get().title, report.title); history.redo(); assert.equal(history.get().title, 'Two');
 history.change(draft => { draft.description = 'New'; }); assert.equal(history.canRedo(), false);

@@ -65,3 +65,22 @@ assert.ok(dualAxis.series[0].markArea);
 assert.ok(dualAxis.visualMap);
 
 console.log('Analytical chart option tests OK');
+
+const newContext = { rows: [['A', 10, 3], ['A', 5, 2], ['B', 8, 4]],
+  columns: [{ name: 'category', kind: 'STRING' }, { name: 'sales', kind: 'NUMERIC' }, { name: 'costs', kind: 'NUMERIC' }],
+  rowCount: 3, xIndex: 0, yIndices: [1, 2], yAxes: {}, marks: {}, theme };
+const horizontal = analytics.buildOption({ ...newContext, chartType: 'horizontalBar' });
+assert.equal(horizontal.yAxis.type, 'category');
+assert.equal(horizontal.xAxis[0].type, 'value');
+assert.deepEqual(Array.from(horizontal.series[0].data, item => item[0]), [15, 8], 'Repeated categories are aggregated without overlapping bars');
+for (const chartType of ['stackedBar', 'stackedArea']) {
+  const stacked = analytics.buildOption({ ...newContext, chartType });
+  assert.equal(stacked.series[0].stack, stacked.series[1].stack);
+  assert.deepEqual(Array.from(stacked.series[0].data, item => item[1]), [15, 8]);
+  assert.equal(stacked.yAxis.length, 1, 'Stacked values share one axis');
+}
+for (const chartType of ['bar', 'horizontalBar', 'stackedBar', 'stackedArea']) {
+  assert.equal(analytics.hasRenderableData(analytics.buildOption({ ...newContext, chartType, rows: [['A', null, null]] })), false, `${chartType}: null-only data is empty`);
+  assert.equal(analytics.hasRenderableData(analytics.buildOption({ ...newContext, chartType, rows: [['A', 0, 0]] })), true, `${chartType}: zero is valid data`);
+  assert.equal(analytics.hasRenderableData(analytics.buildOption({ ...newContext, chartType, rows: [] })), false, `${chartType}: empty result`);
+}

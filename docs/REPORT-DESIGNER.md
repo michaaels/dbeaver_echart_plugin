@@ -75,7 +75,12 @@ Sources use named placeholders such as `:start_date`, with typed values in
 Save templates under `Reports/ECharts` as `.echarts-report.json` with a generated
 `.echarts-report.sql` companion. The JSON is authoritative.
 
-Click a library component to add it or drag it onto the sheet/section. Drag its
+Click a library component to append it without displacing existing content, or drag
+it onto the sheet/section to choose a position. Selecting a section before clicking
+adds the component inside it. Deleting components closes vertical gaps in the
+affected section, retaining columns, sizes and row alignment. **Close gaps** repairs
+whitespace in existing templates, including nested sections. Both actions support
+undo/redo; opening a template preserves its saved positions. Drag its
 selected title strip to move it; every edge and corner resizes it. Arrow keys move
 the component, and the southeast resize handle also supports arrow keys. Shift-click
 selects multiple components for alignment. Ctrl+C/V/D, Delete and Ctrl+Z/Y support
@@ -100,6 +105,16 @@ Use **Preview** for the last successful data snapshot, **Generate report** to
 refresh reviewed sources, and **Export HTML** for an offline interactive file or
 static email-compatible version. **Outlook draft** lets you review recipients,
 subject, message, inline report and attachment before saving an EML.
+Draft fields and the static preview appear side by side; narrower windows stack
+them. Leaving the Message field updates the preview with the same escaped message
+included in the EML. The sandboxed preview has no scripts or database bridge.
+
+Charts are grouped by purpose and use the same catalog in dashboards and reports.
+**Horizontal bar** handles long category names; **Stacked bar** and **Stacked area**
+compare parts of a total on a shared axis. Use values with the same units for stacks.
+Repeated categories are summed for bars and stacks. Chart editing includes a guide
+for each type, including the longitude/latitude/value mapping for maps. Histogram
+and candlestick are not offered until their builders and data mappings are supported.
 
 ## Validation and practical limits
 
@@ -113,6 +128,8 @@ Automated checks cover the following boundaries:
 | Mouse and lifecycle | `test-report-interactions.js`: all eight resize directions, full edge hit surfaces, anchored edges, ECharts dimensions, Escape, zoom, move, empty-section drag/drop, copying descendants, failed refresh and 360–1440px windows |
 | Portable output | Generated HTML reopened with Edge network access disabled; ECharts, KPI/table and local assets checked. Static HTML checked for no scripts/canvas/grid. `test-report-eml.py` independently decodes MIME, Unicode, two inline PNG/CIDs and the byte-identical HTML attachment |
 | Existing functionality | Existing analytical chart, labels, dashboard schema/layout/bridge/authoring and query timeout/cancellation suites |
+| Chart catalog | `test-chart-catalog.js`: identical 15-type catalog in reports/dashboards, 30 Canvas/SVG renders and image exports; `test-analytics.js`: category aggregation, stacking and shared axes |
+| Email preview and flow | Native WebView2 reproduces the blocked `about:srcdoc` navigation. `BrowserNavigationTest` permits only child srcdoc while retaining external/top-level navigation restrictions. Browser tests check loaded preview images, message text, checkbox alignment, delete compaction and undo/redo |
 | Packaging | P2 lifecycle checks install/upgrade/uninstall/reinstall, installed report view/editor/content type/assets and unchanged JSON/SQL fixtures for dashboards and reports |
 
 Browser integration uses deterministic query/connection bridge fixtures, not a live

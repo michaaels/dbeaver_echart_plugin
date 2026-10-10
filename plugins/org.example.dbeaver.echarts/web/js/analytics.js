@@ -1,7 +1,32 @@
 (() => {
   'use strict';
 
-  const CARTESIAN_TYPES = new Set(['line', 'area', 'bar', 'scatter']);
+  const CARTESIAN_TYPES = new Set(['line', 'area', 'bar', 'scatter', 'horizontalBar', 'stackedBar', 'stackedArea']);
+  const CHART_TYPES = Object.freeze([
+    { id: 'line', label: 'Line', group: 'Trends', hint: 'Compare numeric series over a date or category.' },
+    { id: 'area', label: 'Area', group: 'Trends', hint: 'Show the magnitude of numeric series over time.' },
+    { id: 'stackedArea', label: 'Stacked area', group: 'Trends', hint: 'Compare parts of a total over time. Use series with the same units; all series share one axis.', singleAxis: true },
+    { id: 'bar', label: 'Bar', group: 'Comparison', hint: 'Compare categories side by side. Repeated categories are summed.' },
+    { id: 'horizontalBar', label: 'Horizontal bar', group: 'Comparison', hint: 'Compare categories with long names. Category labels appear on the vertical axis.' },
+    { id: 'stackedBar', label: 'Stacked bar', group: 'Comparison', hint: 'Compare parts of a total by category. Use series with the same units; all series share one axis.', singleAxis: true },
+    { id: 'radar', label: 'Radar', group: 'Comparison', hint: 'Compare categories across several numeric measures.' },
+    { id: 'pie', label: 'Pie / ring', group: 'Composition', hint: 'Show category proportions using the first selected numeric series.' },
+    { id: 'treemap', label: 'Treemap', group: 'Composition', hint: 'Show category proportions as rectangles using the first selected series.' },
+    { id: 'funnel', label: 'Funnel', group: 'Composition', hint: 'Compare stages using the first selected numeric series.' },
+    { id: 'scatter', label: 'Scatter', group: 'Distribution', hint: 'Compare numeric X and Y values to find relationships.' },
+    { id: 'boxplot', label: 'Boxplot', group: 'Distribution', hint: 'Summarize the distribution of each selected numeric series.' },
+    { id: 'heatmap', label: 'Heatmap', group: 'Distribution', hint: 'Compare numeric measures by category using a color scale.' },
+    { id: 'gauge', label: 'Gauge', group: 'Indicators and maps', hint: 'Show the average of the first selected numeric series.' },
+    { id: 'map', label: 'Map', group: 'Indicators and maps', hint: 'Choose longitude as X. Select latitude first, then the numeric value as the second series.' }
+  ].map(type => Object.freeze(type)));
+  function populateTypes(select) {
+    select.replaceChildren();
+    let group;
+    for (const type of CHART_TYPES) {
+      if (group?.label !== type.group) { group = document.createElement('optgroup'); group.label = type.group; select.append(group); }
+      const option = document.createElement('option'); option.value = type.id; option.textContent = type.label; group.append(option);
+    }
+  }
   const toNumber = value => {
     if (value === null || value === undefined || value === '') return NaN;
     const number = typeof value === 'number' ? value : Number(value);
@@ -134,11 +159,14 @@
   function buildCartesian(context) {
     const { rows, columns, xIndex, yIndices, yAxes, chartType, theme, marks } = context;
     const xColumn = columns[xIndex];
-    const useTimeAxis = xColumn.kind === 'DATETIME' && chartType !== 'bar';
-    const useCategoryAxis = xColumn.kind === 'STRING' || chartType === 'bar';
+    const horizontal = chartType === 'horizontalBar', stacked = chartType === 'stackedBar' || chartType === 'stackedArea';
+    const bars = ['bar', 'horizontalBar', 'stackedBar'].includes(chartType);
+    const useTimeAxis = xColumn.kind === 'DATETIME' && !bars;
+    const useCategoryAxis = xColumn.kind === 'STRING' || bars;
+    const categories = [...new Set(rows.filter(row => yIndices.some(index => Number.isFinite(toNumber(row[index])))).map(row => displayValue(row[xIndex])))];
     const option = baseOption(context, true);
     const axisNames = { left: [], right: [] };
-    for (const index of yIndices) axisNames[yAxes[index] === 'right' ? 'right' : 'left'].push(columns[index].name);
+    for (const index of yIndices) axisNames[!stacked && yAxes[index] === 'right' ? 'right' : 'left'].push(columns[index].name);
 
     // Keep the axis names below the title/legend band, including dual axes.
     option.grid = { left: 62, right: axisNames.right.length ? 62 : 28, top: context.dashboard ? 68 : 96, bottom: 64, containLabel: true };
@@ -150,23 +178,26 @@
             name: xColumn.name,
             nameLocation: 'middle',
             nameGap: 36,
-            data: [...new Set(rows.map(row => displayValue(row[xIndex])))],
+            data: categories,
             ...axisStyle(theme),
             axisLabel: { hideOverlap: true, color: theme.muted }
           }
         : { type: 'value', name: xColumn.name, scale: true, ...axisStyle(theme, true) };
     option.yAxis = [{
-      type: 'value', name: axisNames.left.join(', '), scale: chartType !== 'bar', position: 'left', ...axisStyle(theme, true)
+      type: 'value', name: axisNames.left.join(', '), scale: !bars && !stacked, position: 'left', ...axisStyle(theme, true)
     }];
     if (axisNames.right.length) {
       option.yAxis.push({
-        type: 'value', name: axisNames.right.join(', '), scale: chartType !== 'bar', position: 'right', ...axisStyle(theme)
+        type: 'value', name: axisNames.right.join(', '), scale: !bars && !stacked, position: 'right', ...axisStyle(theme)
       });
     }
     option.dataZoom = dataZoom();
     option.series = yIndices.map(yIndex => {
-      const seriesType = chartType === 'area' ? 'line' : chartType;
-      const values = rows
+      const seriesType = bars ? 'bar' : ['area', 'stackedArea'].includes(chartType) ? 'line' : chartType;
+      const values = bars || stacked ? (() => {
+        const totals = new Map(aggregateByCategory(rows, xIndex, yIndex).map(item => [item.name, item.value]));
+        return categories.map(category => [category, totals.get(category) ?? null]);
+      })() : rows
         .map(row => {
           const category = useCategoryAxis ? displayValue(row[xIndex]) : useTimeAxis ? row[xIndex] : toNumber(row[xIndex]);
           return [category, toNumber(row[yIndex])];
@@ -175,23 +206,37 @@
       return {
         name: columns[yIndex].name,
         type: seriesType,
-        yAxisIndex: yAxes[yIndex] === 'right' && option.yAxis.length > 1 ? 1 : 0,
+        yAxisIndex: !stacked && yAxes[yIndex] === 'right' && option.yAxis.length > 1 ? 1 : 0,
+        stack: stacked ? 'total' : undefined,
         showSymbol: rows.length <= 500,
         sampling: seriesType === 'line' && rows.length > 2000 ? 'lttb' : undefined,
         progressive: 5000,
         progressiveThreshold: 10000,
         large: (seriesType === 'bar' || seriesType === 'scatter') && rows.length > 5000 && !useCategoryAxis,
-        areaStyle: chartType === 'area' ? {} : undefined,
+        areaStyle: ['area', 'stackedArea'].includes(chartType) ? {} : undefined,
         data: values,
         ...seriesMarks(marks)
       };
     });
     if (marks.visualMap && option.series.length) {
-      const [minimum, maximum] = extent(numericValues(rows, yIndices[0]));
+      const [minimum, maximum] = extent(option.series[0].data.map(pair => toNumber(pair[1])).filter(Number.isFinite));
       option.visualMap = {
         type: 'continuous', min: minimum, max: maximum, dimension: 1, seriesIndex: 0,
         right: 8, bottom: 54, calculable: true, textStyle: { color: theme.muted }
       };
+    }
+    if (horizontal) {
+      const category = option.xAxis, measures = option.yAxis;
+      option.yAxis = { ...category, inverse: true, nameGap: 28 };
+      option.xAxis = measures.map((axis, index) => ({ ...axis, position: index ? 'top' : 'bottom', nameLocation: 'middle', nameGap: index ? 25 : 30 }));
+      option.series.forEach(series => {
+        series.xAxisIndex = series.yAxisIndex; series.yAxisIndex = 0;
+        series.data = series.data.map(([category, value]) => [value, category]);
+      });
+      option.dataZoom = [{ type: 'inside', yAxisIndex: [0], filterMode: 'none' },
+        { type: 'slider', yAxisIndex: [0], width: 14, right: 4, top: context.dashboard ? 68 : 96, bottom: 64, filterMode: 'none' }];
+      option.toolbox = toolbox(theme);
+      if (option.visualMap) option.visualMap.dimension = 0;
     }
     return option;
   }
@@ -363,6 +408,10 @@
   }
 
   function buildOption(context) {
+    if (context.xIndex < 0 || !context.columns[context.xIndex] || !context.yIndices.length) throw new Error('Choose a category and numeric series.');
+    if (context.chartType === 'map' && (context.columns[context.xIndex].kind !== 'NUMERIC' || context.yIndices.length < 2)) {
+      throw new Error('Map requires longitude as X and at least two series: latitude first, then the value.');
+    }
     if (CARTESIAN_TYPES.has(context.chartType)) return buildCartesian(context);
     if (context.chartType === 'pie') return buildPie(context);
     if (context.chartType === 'gauge') return buildGauge(context);
@@ -378,5 +427,8 @@
   const hasRenderableData = option => Array.isArray(option?.series)
     && option.series.some(series => Array.isArray(series.data) && series.data.length > 0);
 
-  window.DBeaverEChartsAnalytics = Object.freeze({ buildOption, displayValue, hasRenderableData, toNumber });
+  window.DBeaverEChartsAnalytics = Object.freeze({ buildOption, displayValue, hasRenderableData, toNumber, CHART_TYPES, populateTypes });
+  if (typeof document !== 'undefined') {
+    const select = document.getElementById('chartType'); if (select) populateTypes(select);
+  }
 })();

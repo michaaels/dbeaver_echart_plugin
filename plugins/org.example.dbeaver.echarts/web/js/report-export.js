@@ -88,13 +88,16 @@
     if ((required && !list.length) || list.length > 100 || list.some(item => !/^[^\s<>@,;]+@[^\s<>@,;]+\.[^\s<>@,;]+$/.test(item))) throw new Error('Enter email addresses separated by commas.');
     return list.join(', ');
   }
+  function withMessage(html, message) {
+    return message?.trim() ? html.replace(/<body([^>]*)>/i, (match, attributes) => `<body${attributes}><p style="margin:16px;font-family:Segoe UI,Arial,sans-serif;white-space:pre-wrap">${escape(message)}</p>`) : html;
+  }
   function eml({ to, cc, subject, message, html, attachment, title }) {
     const boundary = `report-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`, related = boundary + '-related';
     const images = new Map();
-    const body = html.replace(/data:image\/(png|jpeg|gif|webp);base64,([A-Za-z0-9+/=]+)/g, (url, type, encoded) => {
+    const body = withMessage(html, message).replace(/data:image\/(png|jpeg|gif|webp);base64,([A-Za-z0-9+/=]+)/g, (url, type, encoded) => {
       if (!images.has(url)) images.set(url, { cid: `image-${images.size + 1}@echarts-report`, type, encoded });
       return `cid:${images.get(url).cid}`;
-    }).replace(/<body([^>]*)>/i, (match, attributes) => `<body${attributes}><p style="margin:16px;font-family:Segoe UI,Arial,sans-serif;white-space:pre-wrap">${escape(message)}</p>`);
+    });
     const lines = ['MIME-Version: 1.0', 'X-Unsent: 1', `To: ${addresses(to, true)}`, ...(cc.trim() ? [`Cc: ${addresses(cc)}`] : []),
       `Subject: ${header(subject || title)}`, `Content-Type: multipart/mixed; boundary="${boundary}"`, '',
       `--${boundary}`, `Content-Type: multipart/related; boundary="${related}"`, '', `--${related}`,
@@ -106,5 +109,5 @@
     lines.push(`--${boundary}--`, '');
     return lines.join('\r\n');
   }
-  window.DBeaverReportExport = Object.freeze({ interactive, emailHtml, chartImages, eml, escape, safeJson });
+  window.DBeaverReportExport = Object.freeze({ interactive, emailHtml, chartImages, eml, withMessage, escape, safeJson });
 })();
