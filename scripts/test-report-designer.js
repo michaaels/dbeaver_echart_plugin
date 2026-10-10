@@ -176,7 +176,10 @@ async function main() {
     assert.ok(await emailPreview.locator('img').evaluateAll(images => images.every(image => image.complete && image.naturalWidth > 0)), 'Email preview includes loaded chart and logo images');
     assert.equal(await page.locator('.report-check').first().evaluate(label => getComputedStyle(label).display), 'flex', 'Checkbox remains beside its label');
     const previewBox = await page.locator('#reportEmailPreview').boundingBox();
-    assert.ok(previewBox.width > 250 && previewBox.height > 200 && previewBox.y + previewBox.height <= 1100, 'Preview is visible alongside draft fields');
+    const fieldsBox = await page.locator('.report-email-fields').boundingBox();
+    assert.ok(previewBox.y >= fieldsBox.y + fieldsBox.height && previewBox.width >= fieldsBox.width - 8,
+      'Preview is below the draft fields and uses their full width');
+    assert.ok(previewBox.height > 200 && previewBox.y + previewBox.height <= 1100, 'Preview is visible below draft fields');
     const outputDirectory = path.join(root, '.dev/screenshots'); fs.mkdirSync(outputDirectory, { recursive: true });
     await page.screenshot({ path: path.join(outputDirectory, 'report-email-compose.png') });
     await page.locator('#reportEmailTo').fill('review@example.com');

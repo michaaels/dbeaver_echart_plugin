@@ -105,8 +105,8 @@ Use **Preview** for the last successful data snapshot, **Generate report** to
 refresh reviewed sources, and **Export HTML** for an offline interactive file or
 static email-compatible version. **Outlook draft** lets you review recipients,
 subject, message, inline report and attachment before saving an EML.
-Draft fields and the static preview appear side by side; narrower windows stack
-them. Leaving the Message field updates the preview with the same escaped message
+The static preview appears below the draft fields at the full available width.
+The content scrolls while Save and Cancel remain visible. Leaving the Message field updates the preview with the same escaped message
 included in the EML. The sandboxed preview has no scripts or database bridge.
 
 Charts are grouped by purpose and use the same catalog in dashboards and reports.

@@ -66,12 +66,12 @@
 .report-designer .report-check input { width: auto; min-height: 0; margin: 0; flex: 0 0 auto; }
 .report-dialog { width: min(850px,94vw); max-height: 90vh; overflow: auto; padding: 20px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); }
 .report-dialog.small { width: min(460px,94vw); }
-.report-dialog.email { width: min(1100px,96vw); height: min(720px,94vh); max-height: 94vh; overflow: hidden; }
+.report-dialog.email { width: min(1100px,96vw); height: min(960px,94vh); max-height: 94vh; overflow: hidden; }
 .report-dialog.email[open] { display: flex; flex-direction: column; }
-.report-email-content { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(260px,.85fr) minmax(280px,1.15fr); gap: 20px; }
-.report-email-fields { overflow: auto; padding: 3px; }
+.report-email-content { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 16px; overflow: auto; }
+.report-email-fields { flex: 0 0 auto; padding: 3px; }
 .report-email-fields :is(input,textarea) { width: 100%; min-width: 0; }
-.report-email-preview { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.report-email-preview { display: flex; flex-direction: column; flex: 1 0 340px; min-width: 0; }
 .report-dialog.email footer { position: static; flex: 0 0 auto; }
 #reportEmailError:empty { display: none; }
 .report-dialog::backdrop, .report-preview-dialog::backdrop { background: #0007; }
@@ -101,4 +101,4 @@
 .report-column-config summary { font-size: 12px; cursor: pointer; padding-bottom: 6px; }
 @media (max-width: 1000px) { .report-workspace { grid-template-columns: 148px minmax(240px,1fr) 236px; } .report-library, .report-properties { padding: 8px; } .report-canvas-scroll { padding: 24px 12px; } }
 @media (max-width: 720px) { .report-workspace { grid-template-columns: 112px minmax(160px,1fr); grid-template-rows: minmax(200px,1fr) 220px; } .report-properties { grid-column: 1/-1; border-top: 1px solid var(--border); } .report-title-row > strong { display: none; } .report-title-row > input { font-size: 16px; max-width: 60%; } .report-source-layout { grid-template-columns: 1fr; } .report-parameter-row { grid-template-columns: 1fr 1fr; } .report-actions button { font-size: 11px; } }
-@media (max-width: 720px) { .report-email-content { grid-template-columns: 1fr; overflow: auto; } .report-email-fields { overflow: visible; } .report-email-preview { min-height: 280px; } }
+@media (max-width: 720px) { .report-email-preview { flex-basis: 280px; } }
