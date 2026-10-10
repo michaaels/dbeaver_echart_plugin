@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { chromium } = require('../.dev/browser-tests/node_modules/playwright');
+const { launchBrowser } = require('./browser-test-runtime');
 const root = path.resolve(__dirname, '..');
 
 async function main() {
@@ -22,7 +22,7 @@ async function main() {
       { name: 'latitud', kind: 'NUMERIC' }, { name: 'ventas', kind: 'NUMERIC' }],
     rows: [['Quito', -78.4678, -0.1807, 18000], ['Guayaquil', -79.889, -2.1894, 12000], ['Cuenca', -79.0059, -2.9001, 9000]]
   };
-  const browser = await chromium.launch({ channel: 'msedge', headless: true });
+  const browser = await launchBrowser();
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     const errors = [];

@@ -3,11 +3,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { chromium } = require('../.dev/browser-tests/node_modules/playwright');
+const { launchBrowser } = require('./browser-test-runtime');
 const root = path.resolve(__dirname, '..');
 const initial = { x: 3, y: 2, width: 6, height: 8 };
 async function main() {
-  const browser = await chromium.launch({ channel: 'msedge', headless: true });
+  const browser = await launchBrowser();
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }), errors = [];
     page.on('pageerror', error => errors.push(error.message));

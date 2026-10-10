@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-python - <<'PY'
+python3 - <<'PY'
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path

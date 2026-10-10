@@ -3,14 +3,14 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { chromium } = require('../.dev/browser-tests/node_modules/playwright');
+const { launchBrowser } = require('./browser-test-runtime');
 const root = path.resolve(__dirname, '..'), web = path.join(root, 'plugins/org.example.dbeaver.echarts/web');
 const assets = Object.fromEntries([['echarts', 'js/echarts.min.js'], ['worldMap', 'js/world-map.js'], ['analytics', 'js/analytics.js'],
   ['widgets', 'js/report-widgets.js'], ['paperCss', 'css/report-paper.css']].map(([key, file]) => [key, fs.readFileSync(path.join(web, file), 'utf8')]));
 assets.licenses = fs.readFileSync(path.join(web, '../third-party/echarts/LICENSE'), 'utf8');
 
 async function main() {
-  const browser = await chromium.launch({ channel: 'msedge', headless: true });
+  const browser = await launchBrowser();
   try {
     const page = await browser.newPage({ viewport: { width: 1700, height: 1100 } }), errors = [];
     page.on('pageerror', error => errors.push(error.message));

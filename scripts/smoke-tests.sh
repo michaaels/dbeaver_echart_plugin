@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-python - "${DBEAVER_PLUGINS:-}" <<'PY'
+python3 - "${DBEAVER_PLUGINS:-}" <<'PY'
 import re
 import os
 import shutil

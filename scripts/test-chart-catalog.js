@@ -2,10 +2,10 @@
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { chromium } = require('../.dev/browser-tests/node_modules/playwright');
+const { launchBrowser } = require('./browser-test-runtime');
 
 async function main() {
-  const browser = await chromium.launch({ channel: 'msedge', headless: true });
+  const browser = await launchBrowser();
   try {
     const page = await browser.newPage({ viewport: { width: 1000, height: 800 } }), errors = [];
     page.on('pageerror', error => errors.push(error.message));
