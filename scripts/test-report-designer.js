@@ -219,7 +219,10 @@ async function main() {
     await page.evaluate(saved => window.DBeaverECharts.loadReport(saved), saved);
     assert.equal(await page.evaluate(() => window.testQueries.length), countBeforeReopen);
     assert.deepEqual(await document(), saved, 'Template reopens without changes or runtime rows');
-    const offline = await browser.newContext({ viewport: { width: 1100, height: 1000 }, offline: true });
+    // WebKit's offline emulation rejects even file: navigation. Block every
+    // network request instead, retaining local-file loading in both engines.
+    const offline = await browser.newContext({ viewport: { width: 1100, height: 1000 }, serviceWorkers: 'block' });
+    await offline.route(/^https?:/, route => route.abort('internetdisconnected'));
     const result = await offline.newPage(); const requests = []; result.on('request', request => requests.push(request.url()));
     const reportErrors = []; result.on('pageerror', error => reportErrors.push(error.message));
     await result.goto(pathToFileURL(path.join(artifactDir, 'ventas-interactive.html')).href);

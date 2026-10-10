@@ -137,6 +137,7 @@ jobs:
           launcher=$(find "$product/plugins" -name 'org.eclipse.equinox.launcher_*.jar' -print -quit)
           "$product/jre/bin/java" --enable-native-access=ALL-UNNAMED -jar "$launcher" -nosplash -consoleLog -install "$product" -configuration "$product/configuration" -data "$PWD/.dev/linux-director-workspace" -eclipse.keyring "$PWD/.dev/linux-keyring" -application org.eclipse.equinox.p2.director -repository "file:$PWD/.dev/linux-repository" -installIU org.example.dbeaver.echarts.feature.feature.group
       - name: Validate Linux APIs, Chromium, WebKit and the installed registry
+        shell: bash
         run: bash scripts/test-linux.sh "$PWD/.dev/linux-target/dbeaver" 2>&1 | tee .dev/linux-tests.log
       - name: Upload Linux test evidence
         if: always()
