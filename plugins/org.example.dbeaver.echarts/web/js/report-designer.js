@@ -6,6 +6,7 @@
   let selected = new Set(), clipboard = null, values = {}, saved = JSON.stringify(history.get()), persistTimer = null;
   let cleanup = null, previewCleanup = null, gesture = null, zoom = 1, reviewed = [], generating = false, sourceSelection = null, assets = null, email = null, discardAction = null;
   const charts = new Map();
+  let tablePages = {}, libraryDrag = null, dropPreview = null;
   let theme = { background: '#ffffff', foreground: '#243447', muted: '#657487', border: '#d5dce3', grid: '#e5eaf0', controlBackground: '#f3f3f3', dark: false };
   const execution = window.DBeaverReportExecution.create({
     approve: json => window.dbeaverApproveWidgetQueries?.(json), execute: (id, sql, source) => window.dbeaverExecuteWidgetQuery?.(id, sql, source),
@@ -66,21 +67,62 @@
       control.setAttribute('aria-pressed', String(selected.has(widget.id))); control.dataset.layerId = widget.id; $('reportLayers').append(control);
     }
   }
+  function clearDropPreview(end = false) {
+    dropPreview?.dispose?.(); dropPreview?.frame.remove(); dropPreview = null;
+    if (end) libraryDrag = null;
+  }
+  function dropCandidate(event, grid, type = libraryDrag?.type) {
+    if (!M.TYPES.includes(type) || !grid) return null;
+    const widget = libraryDrag?.type === type ? M.clone(libraryDrag.widget) : M.widget(type);
+    const box = grid.getBoundingClientRect(), gap = current().page.gap;
+    widget.parentId = grid.closest('.report-component')?.dataset.componentId || null;
+    widget.layout = L.normalizeLayout({ ...widget.layout,
+      x: Math.floor((event.clientX - box.x) / ((box.width + gap * zoom) / 12)),
+      y: Math.floor((event.clientY - box.y) / ((24 + gap) * zoom)) }, M.BOUNDS);
+    let valid = true;
+    if (widget.parentId) {
+      const rows = Math.floor((box.height / zoom + gap) / (24 + gap));
+      valid = widget.layout.height <= rows;
+      widget.layout.y = Math.min(widget.layout.y, Math.max(0, rows - widget.layout.height));
+    }
+    return { grid, widget, valid };
+  }
+  function previewDrop(event, grid) {
+    const candidate = dropCandidate(event, grid); if (!candidate) return;
+    event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = candidate.valid ? 'copy' : 'none';
+    const { widget, valid } = candidate;
+    if (dropPreview?.grid !== grid) {
+      clearDropPreview();
+      const frame = node('article', undefined, 'report-component report-drop-preview'), body = node('div', undefined, 'report-component-body');
+      frame.setAttribute('aria-hidden', 'true'); frame.append(body); grid.append(frame);
+      const label = node('div', undefined, 'report-drop-label'); frame.append(label);
+      const dispose = W.renderWidget(body, widget, null, { designer: true });
+      dropPreview = { frame, label, grid, dispose };
+    }
+    const gap = current().page.gap, pitch = (grid.getBoundingClientRect().width / zoom + gap) / 12;
+    Object.assign(dropPreview.frame.style, { left: `${widget.layout.x * pitch}px`, top: `${widget.layout.y * (24 + gap)}px`,
+      width: `${widget.layout.width * pitch - gap}px`, height: `${widget.layout.height * (24 + gap) - gap}px` });
+    dropPreview.frame.dataset.invalid = String(!valid);
+    dropPreview.label.textContent = valid ? `${W.registry.get(widget.type).label} · ${widget.layout.width} columns × ${widget.layout.height} rows` : 'Increase the section height to fit this component';
+  }
+  function commitDrop(event, grid) {
+    const type = libraryDrag?.type || event.dataTransfer.getData('application/x-echarts-report-component');
+    const candidate = dropCandidate(event, grid, type); if (!candidate) return;
+    event.preventDefault(); event.stopPropagation(); clearDropPreview(true);
+    if (!candidate.valid) { status('Increase the section height before adding this component.', true); return; }
+    add(type, candidate.widget.layout, candidate.widget.parentId);
+  }
   function renderCanvas() {
     if (!$('reportCanvas')) return;
     cleanup?.(); charts.clear();
     const state = execution.state();
-    cleanup = W.renderReport($('reportCanvas'), current(), state.snapshots, { ...state, charts, parameters: values, designer: true, decorate });
+    clearDropPreview();
+    cleanup = W.renderReport($('reportCanvas'), current(), state.snapshots, { ...state, charts, tablePages, parameters: values, designer: true, decorate });
     // Bind every grid, including empty sections; the nearest grid owns a drop.
     for (const grid of $('reportCanvas').querySelectorAll('.report-grid')) {
-      grid.addEventListener('dragover', event => event.preventDefault());
-      grid.addEventListener('drop', event => {
-        event.preventDefault(); event.stopPropagation();
-        const type = event.dataTransfer.getData('application/x-echarts-report-component');
-        if (!M.TYPES.includes(type)) return;
-        const box = grid.getBoundingClientRect(), pitch = (box.width + current().page.gap * zoom) / 12;
-        add(type, { x: Math.max(0, Math.floor((event.clientX - box.x) / pitch)), y: Math.max(0, Math.floor((event.clientY - box.y) / ((24 + current().page.gap) * zoom))) }, grid.closest('.report-component')?.dataset.componentId || null);
-      });
+      grid.style.position = 'relative';
+      grid.addEventListener('dragover', event => previewDrop(event, grid));
+      grid.addEventListener('drop', event => commitDrop(event, grid));
     }
     $('reportCanvas').classList.toggle('show-grid', current().page.grid);
     $('reportCanvas').style.transform = `scale(${zoom})`;
@@ -240,7 +282,7 @@
   function showDialog(id) { $(id).showModal(); }
   function loadReport(input, asNew = false) {
     const normalized = M.normalize(typeof input === 'string' ? JSON.parse(input) : input);
-    gesture?.cancel(); window.DBeaverWidgetEditor.close(); execution.reset(); history.replace(normalized); selected.clear();
+    gesture?.cancel(); clearDropPreview(true); tablePages = {}; window.DBeaverWidgetEditor.close(); execution.reset(); history.replace(normalized); selected.clear();
     values = Object.fromEntries(normalized.parameters.map(parameter => [parameter.name, parameter.default])); saved = asNew ? '' : JSON.stringify(current());
     document.querySelectorAll('dialog[open]').forEach(dialog => dialog.close());
     generating = false; render(); status('Template ready. Review SQL before refreshing its data.');
@@ -359,14 +401,14 @@
     previewCleanup?.(); const state = execution.state();
     $('reportPreviewStatus').textContent = state.generatedAt ? `Data snapshot: ${new Date(state.generatedAt).toLocaleString()}` : 'Design preview. Refresh data to populate SQL components.';
     showDialog('reportPreviewDialog');
-    previewCleanup = W.renderReport($('reportPreviewCanvas'), current(), state.snapshots, { ...state, parameters: values });
+    previewCleanup = W.renderReport($('reportPreviewCanvas'), current(), state.snapshots, { ...state, tablePages, parameters: values });
   }
   function exportAssets() {
     if (!assets) assets = JSON.parse(window.dbeaverReportExportAssets?.() || 'null');
     if (!assets) throw new Error('Bundled export assets are unavailable.'); return assets;
   }
   function exports() {
-    const state = execution.ready(current()), context = { generatedAt: state.generatedAt || new Date().toISOString(), parameters: values };
+    const state = execution.ready(current()), context = { generatedAt: state.generatedAt || new Date().toISOString(), parameters: values, tablePages: { ...tablePages } };
     return { interactive: () => window.DBeaverReportExport.interactive(current(), state.snapshots, context, exportAssets()),
       email: () => window.DBeaverReportExport.emailHtml(current(), state.snapshots, context, window.DBeaverReportExport.chartImages(charts)) };
   }
@@ -408,18 +450,26 @@
     for (const [type, definition] of W.registry) {
       const control = P.button('', () => add(type)); control.dataset.componentType = type; control.draggable = true;
       control.append(node('span', definition.icon, 'component-icon'), node('span', definition.label));
-      control.addEventListener('dragstart', event => { event.dataTransfer.setData('application/x-echarts-report-component', type); event.dataTransfer.effectAllowed = 'copy'; }); $('componentLibrary').append(control);
+      control.addEventListener('dragstart', event => { clearDropPreview(true); libraryDrag = { type, widget: M.widget(type) }; event.dataTransfer.setData('application/x-echarts-report-component', type); event.dataTransfer.effectAllowed = 'copy'; }); $('componentLibrary').append(control);
+      control.addEventListener('dragend', () => clearDropPreview(true));
     }
     $('reportCanvas').addEventListener('pointerdown', event => { if (!event.target.closest('.report-component')) select(null); });
-    $('reportCanvas').addEventListener('dragover', event => event.preventDefault());
-    $('reportCanvas').addEventListener('drop', event => {
-      if (event.defaultPrevented) return; event.preventDefault(); const type = event.dataTransfer.getData('application/x-echarts-report-component');
-      if (!M.TYPES.includes(type)) return;
+    const dropGrid = event => {
       const container = event.target.closest('.report-component'), component = current().widgets.find(widget => widget.id === container?.dataset.componentId);
-      const grid = component && W.registry.get(component.type)?.container ? container.querySelector('.report-grid') : event.target.closest('.report-grid') || $('reportCanvas').querySelector('.report-grid');
-      const box = grid.getBoundingClientRect();
-      add(type, { x: Math.floor((event.clientX - box.x) / ((box.width + current().page.gap * zoom) / 12)), y: Math.max(0, Math.floor((event.clientY - box.y) / ((24 + current().page.gap) * zoom))) }, grid.closest('.report-component')?.dataset.componentId || null);
+      return component && W.registry.get(component.type)?.container ? container.querySelector('.report-grid') : event.target.closest('.report-grid') || $('reportCanvas').querySelector('.report-grid');
+    };
+    $('reportCanvas').addEventListener('dragover', event => previewDrop(event, dropGrid(event)));
+    $('reportCanvas').addEventListener('drop', event => {
+      if (!event.defaultPrevented) commitDrop(event, dropGrid(event));
     });
+    $('reportCanvas').addEventListener('dragleave', event => {
+      const box = $('reportCanvas').getBoundingClientRect();
+      if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) clearDropPreview();
+    });
+    document.addEventListener('dragend', () => clearDropPreview(true));
+    document.addEventListener('dragover', event => { if (!event.target.closest('#reportCanvas')) clearDropPreview(); });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape' && libraryDrag) clearDropPreview(true); });
+    window.addEventListener('blur', () => clearDropPreview(true));
     const click = (id, action) => $(id).addEventListener('click', () => { try { action(); } catch (error) { status(error.message, true); } });
     click('newReport', () => createDocument(M.create()));
     click('openReport', () => window.dbeaverOpenReport?.());
@@ -472,7 +522,7 @@
     markReportSaved: () => { saved = JSON.stringify(current()); renderControls(); },
     setWidgetSnapshot: (id, snapshot) => window.DBeaverWidgetEditor.receiveSnapshot(id, snapshot) || execution.receive(id, snapshot),
     setWidgetError: (id, message) => window.DBeaverWidgetEditor.receiveError(id, message) || execution.receiveError(id, message),
-    setLoading: () => {}, setSnapshot: () => {}, setError: message => status(message, true), dispose: () => { gesture?.cancel(); execution.stop(); cleanup?.(); previewCleanup?.(); window.DBeaverWidgetEditor.close(); } });
+    setLoading: () => {}, setSnapshot: () => {}, setError: message => status(message, true), dispose: () => { gesture?.cancel(); clearDropPreview(true); execution.stop(); cleanup?.(); previewCleanup?.(); window.DBeaverWidgetEditor.close(); } });
   window.addEventListener('pagehide', () => { window.clearTimeout(persistTimer); window.DBeaverECharts.dispose(); });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();

@@ -74,8 +74,31 @@ async function main() {
     assert.match(await page.locator('#reportCanvas .report-data-error').textContent(), /Test connection lost/); assert.deepEqual(await doc(), retained, 'Failed refresh preserves design');
     await page.evaluate(() => { const M = window.DBeaverReportModel, report = M.create('Sections'), section = M.widget('section'); section.id = 'section'; section.layout = { x: 0, y: 0, width: 12, height: 12 }; report.widgets.push(section); window.DBeaverECharts.loadReport(report); });
     const target = page.locator('[data-component-id="section"] .report-grid');
-    await page.locator('[data-component-type="heading"]').dragTo(target);
+    const libraryHeading = page.locator('[data-component-type="heading"]');
+    const libraryBox = await libraryHeading.boundingBox(), targetBox = await target.boundingBox();
+    const beforeDrop = await doc(), queriesBeforeDrop = await page.evaluate(() => window.queryCount);
+    await page.mouse.move(libraryBox.x + 20, libraryBox.y + 10); await page.mouse.down();
+    await page.mouse.move(libraryBox.x + 30, libraryBox.y + 15);
+    await page.mouse.move(targetBox.x + 50, targetBox.y + 50, { steps: 8 });
+    await page.mouse.move(targetBox.x + 50, targetBox.y + 50);
+    const ghost = page.locator('.report-drop-preview');
+    await ghost.waitFor(); assert.match(await ghost.innerText(), /Report title/);
+    assert.deepEqual(await doc(), beforeDrop, 'Preview does not modify the report');
+    const ghostBox = await ghost.boundingBox(); assert.ok(ghostBox.width > 100 && ghostBox.height > 40);
+    fs.mkdirSync(path.join(root, '.dev/screenshots'), { recursive: true });
+    await page.screenshot({ path: path.join(root, '.dev/screenshots/report-drop-preview.png') });
+    await page.mouse.up(); assert.equal(await ghost.count(), 0);
     const nested = (await doc()).widgets.find(widget => widget.type === 'heading'); assert.ok(nested); assert.equal(nested.parentId, 'section', 'HTML5 drop targets empty sections');
+    const placedBox = await page.locator(`[data-component-id="${nested.id}"]`).boundingBox();
+    for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(placedBox[key] - ghostBox[key]) < 1, `Drop matches preview ${key}`);
+    assert.equal(await page.evaluate(() => window.queryCount), queriesBeforeDrop, 'Drag preview never executes SQL');
+    // A cancelled library drag leaves neither a component nor a preview behind.
+    const beforeCancel = await doc();
+    await page.mouse.move(libraryBox.x + 20, libraryBox.y + 10); await page.mouse.down();
+    await page.mouse.move(libraryBox.x + 30, libraryBox.y + 15);
+    await page.mouse.move(targetBox.x + 50, targetBox.y + 120, { steps: 8 }); await page.mouse.move(targetBox.x + 50, targetBox.y + 120);
+    await ghost.waitFor(); await page.keyboard.press('Escape'); await page.mouse.up();
+    assert.equal(await ghost.count(), 0); assert.deepEqual(await doc(), beforeCancel);
     await page.locator('[data-layer-id="section"]').click(); await page.locator('#componentProperties').getByRole('button', { name: 'Copy', exact: true }).click();
     await page.locator('#componentProperties').getByRole('button', { name: 'Paste', exact: true }).click();
     assert.equal((await doc()).widgets.filter(widget => widget.type === 'section').length, 2); assert.equal((await doc()).widgets.filter(widget => widget.type === 'heading').length, 2);
@@ -85,8 +108,24 @@ async function main() {
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${width}px: controls do not overflow`);
     }
     assert.deepEqual(errors, []);
+    // Root drops use the same clamped footprint at 75% zoom, including the right edge.
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.evaluate(() => window.DBeaverECharts.loadReport(window.DBeaverReportModel.create('Zoomed drop')));
+    await page.locator('#reportZoom').selectOption('0.75');
+    const tableButton = page.locator('[data-component-type="table"]'); await tableButton.scrollIntoViewIfNeeded();
+    const tableButtonBox = await tableButton.boundingBox(), canvasBox = await page.locator('#reportCanvas').boundingBox();
+    await page.mouse.move(tableButtonBox.x + 20, tableButtonBox.y + 10); await page.mouse.down();
+    await page.mouse.move(tableButtonBox.x + 35, tableButtonBox.y + 15);
+    await page.mouse.move(canvasBox.x + canvasBox.width - 25, canvasBox.y + 100, { steps: 8 });
+    await page.mouse.move(canvasBox.x + canvasBox.width - 25, canvasBox.y + 100);
+    await ghost.waitFor(); const zoomGhost = await ghost.boundingBox();
+    await page.mouse.up(); const placedTable = (await doc()).widgets[0];
+    assert.equal(placedTable.layout.x, 6, 'Right-edge drop is clamped before placement');
+    const zoomPlaced = await page.locator(`[data-component-id="${placedTable.id}"]`).boundingBox();
+    for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(zoomPlaced[key] - zoomGhost[key]) < 1, `Zoomed drop matches ${key}`);
+    await page.locator('#undoReport').click(); assert.equal((await doc()).widgets.length, 0);
     await page.evaluate(() => window.DBeaverECharts.dispose());
-    assert.equal(await page.locator('.report-drag-guide').count(), 0);
+    assert.equal(await page.locator('.report-drag-guide,.report-drop-preview').count(), 0);
     console.log('Report interaction OK: all 8 mouse edges, full border hits, ECharts resize, anchored bounds, Escape/undo, 75% zoom, move, failed refresh, section drop/copy/delete, narrow windows and disposal');
   } finally { await browser.close(); }
 }

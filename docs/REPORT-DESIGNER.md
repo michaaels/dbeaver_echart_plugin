@@ -76,7 +76,11 @@ Save templates under `Reports/ECharts` as `.echarts-report.json` with a generate
 `.echarts-report.sql` companion. The JSON is authoritative.
 
 Click a library component to append it without displacing existing content, or drag
-it onto the sheet/section to choose a position. Selecting a section before clicking
+it onto the sheet/section to choose a position. Before dropping, a live component
+preview shows the exact footprint at the current zoom; releasing places it there,
+and Escape or leaving the sheet removes the preview without changing the template.
+An undersized section shows an invalid preview and asks for more height.
+Selecting a section before clicking
 adds the component inside it. Deleting components closes vertical gaps in the
 affected section, retaining columns, sizes and row alignment. **Close gaps** repairs
 whitespace in existing templates, including nested sections. Both actions support
@@ -152,10 +156,14 @@ adapter. Strings with ambiguous backslash quoting and raw `?` placeholders are
 rejected. Multi-statement scripts and write/locking operations are unsupported.
 
 Number/date display follows browser locale; currency is USD. Tables paginate in
-the editor/interactive HTML; static email includes all retrieved rows and grows
-naturally. Group subtotals in a paginated interactive table apply to visible rows,
-while the grand total covers the snapshot. Email tables preserve column placement
-and content, adapting row heights rather than reproducing arbitrary grid pixels.
+the editor/interactive HTML. Static email preserves the selected page, configured
+rows per page and table height; it never expands the entire query automatically.
+Increase **Rows per page** and provide enough **Height (rows)** to include more.
+The email shows a row-range summary instead of inactive pagination buttons.
+Group subtotals apply to the displayed rows; the grand total covers the snapshot.
+Email uses the configured sheet width and bounds the actual rendered rows because
+mail clients cannot reliably clip overflowing tables. Very narrow mail windows
+can wrap cell text differently from the designer.
 Graph OAuth, desktop COM and real mail submission are not implemented. Exporting
 HTML intentionally includes the selected data and runtime parameter values for
 sharing, but omits SQL, connection identifiers and database credentials.

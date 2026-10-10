@@ -54,6 +54,11 @@
 .report-resize.edge-se { bottom: -6px; right: -6px; cursor: nwse-resize; } .report-resize.edge-sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
 .report-drag-guide { outline: 1px dashed #21679b; position: absolute; inset: 0; pointer-events: none; }
 .report-dragging { user-select: none; }
+#reportCanvas .report-drop-preview { position: absolute; pointer-events: none; z-index: 20; outline: 2px dashed #21679b; background: #ffffffe8; }
+.report-drop-preview .report-component-body { overflow: hidden; }
+.report-drop-label { position: absolute; top: 0; left: 0; max-width: 100%; padding: 2px 6px; font: 11px/1.5 "Segoe UI",Arial,sans-serif; color: white; background: #21679b; transform: translateY(-100%); }
+#reportCanvas .report-drop-preview[data-invalid=true] { outline-color: #b42318; }
+.report-drop-preview[data-invalid=true] .report-drop-label { background: #b42318; }
 .report-designer .report-properties label:not(.report-check), .report-designer .report-dialog label:not(.report-check) { display: grid; gap: 4px; font-size: 11px; color: var(--muted); margin-bottom: 8px; }
 .report-properties textarea { min-height: 100px; resize: vertical; }
 .report-properties input, .report-properties select, .report-properties textarea { width: 100%; min-width: 0; }

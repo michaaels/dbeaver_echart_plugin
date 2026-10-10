@@ -7,7 +7,7 @@
     if (!assets?.echarts || !assets?.widgets || !assets?.paperCss) throw new Error('Report export assets are not available.');
     const portable = { title: report.title, page: report.page, widgets: report.widgets };
     const scripts = [assets.echarts, assets.worldMap, assets.analytics, assets.widgets].filter(Boolean).map(code => `<script>${safeScript(code)}</script>`).join('\n');
-    const runtime = `const report=${safeJson(portable)};const data=${safeJson(snapshots)};const context=${safeJson({ generatedAt: context.generatedAt, parameters: context.parameters })};window.DBeaverReportWidgets.renderReport(document.getElementById('report'),report,data,context);`;
+    const runtime = `const report=${safeJson(portable)};const data=${safeJson(snapshots)};const context=${safeJson({ generatedAt: context.generatedAt, parameters: context.parameters, tablePages: context.tablePages })};window.DBeaverReportWidgets.renderReport(document.getElementById('report'),report,data,context);`;
     return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(report.title)}</title><style>body{margin:0;background:#f3f6f9} .report-paper{max-width:100%}${assets.paperCss}</style></head><body><main id="report"></main>${scripts}<script>${runtime}</script><details style="margin:16px;font:12px sans-serif"><summary>Third-party licenses</summary><pre style="white-space:pre-wrap">${escape(assets.licenses || '')}</pre></details></body></html>`;
   }
   function chartImages(charts) {
@@ -31,15 +31,15 @@
   }
   function emailHtml(report, snapshots, context, images) {
     const W = window.DBeaverReportWidgets, mount = W.node('div');
-    mount.className = 'report-paper'; mount.style.position = 'absolute'; mount.style.left = '-10000px'; mount.style.width = '800px';
+    mount.className = 'report-paper'; mount.style.position = 'absolute'; mount.style.left = '-10000px'; mount.style.width = `${report.page.width}px`; mount.style.padding = `${report.page.margin}px`;
     document.body.append(mount);
     try {
-      function group(parentId) {
+      function group(parentId, host) {
         const table = W.node('table'); table.setAttribute('role', 'presentation'); table.setAttribute('width', '100%'); table.setAttribute('cellpadding', '0'); table.setAttribute('cellspacing', '0');
         table.style.borderCollapse = 'collapse'; table.style.tableLayout = 'fixed';
         const columns = W.node('colgroup');
         for (let i = 0; i < 12; i++) { const column = W.node('col'); column.setAttribute('width', `${100 / 12}%`); columns.append(column); }
-        table.append(columns);
+        table.append(columns); host.append(table);
         const rows = new Map();
         for (const widget of report.widgets.filter(widget => (widget.parentId || null) === parentId).sort((a, b) => a.layout.y - b.layout.y || a.layout.x - b.layout.x)) {
           if (!W.visible(widget, snapshots[widget.sourceId])) continue;
@@ -47,23 +47,27 @@
           rows.get(widget.layout.y).push(widget);
         }
         for (const widgets of rows.values()) {
-          const row = W.node('tr'); let column = 0;
+          const row = W.node('tr'); table.append(row); let column = 0;
           for (const widget of widgets) {
             if (widget.layout.x > column) { const spacer = W.node('td', '\u00a0'); spacer.colSpan = widget.layout.x - column; spacer.setAttribute('width', `${(widget.layout.x - column) / 12 * 100}%`); row.append(spacer); }
             const cell = W.node('td'); cell.colSpan = widget.layout.width; cell.setAttribute('width', `${widget.layout.width / 12 * 100}%`); cell.setAttribute('valign', 'top'); cell.style.padding = `${report.page.gap / 2}px`;
-            const body = W.node('div'); body.style.minHeight = `${Math.min(widget.layout.height * 24, 100)}px`; cell.append(body);
-            W.renderWidget(body, widget, snapshots[widget.sourceId], { ...context, chartImages: images, allRows: true });
-            if (W.registry.get(widget.type)?.container) body.append(group(widget.id));
-            row.append(cell); column = widget.layout.x + widget.layout.width;
+            row.append(cell);
+            const body = W.node('div'); cell.append(body);
+            if (widget.type === 'table') {
+              const height = widget.layout.height * 24 + (widget.layout.height - 1) * report.page.gap;
+              body.className = 'report-component-body'; body.style.height = `${height}px`; cell.setAttribute('height', String(height));
+            } else body.style.minHeight = `${Math.min(widget.layout.height * 24, 100)}px`;
+            W.renderWidget(body, widget, snapshots[widget.sourceId], { ...context, chartImages: images, staticTable: true });
+            if (W.registry.get(widget.type)?.container) group(widget.id, body);
+            column = widget.layout.x + widget.layout.width;
           }
           if (column < 12) { const spacer = W.node('td', '\u00a0'); spacer.colSpan = 12 - column; spacer.setAttribute('width', `${(12 - column) / 12 * 100}%`); row.append(spacer); }
-          table.append(row);
         }
         return table;
       }
-      mount.append(group(null)); inlineStyles(mount);
+      group(null, mount); inlineStyles(mount);
       const content = mount.innerHTML;
-      return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(report.title)}</title></head><body style="margin:0;background:#f3f6f9;font-family:Segoe UI,Arial,sans-serif;color:#243447"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center"><table role="presentation" width="800" cellpadding="0" cellspacing="0" style="width:100%;max-width:800px;background:${report.page.background}"><tr><td style="padding:${report.page.margin}px">${content}</td></tr></table></td></tr></table></body></html>`;
+      return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(report.title)}</title></head><body style="margin:0;background:#f3f6f9;font-family:Segoe UI,Arial,sans-serif;color:#243447"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center"><table role="presentation" width="${report.page.width}" cellpadding="0" cellspacing="0" style="width:100%;max-width:${report.page.width}px;background:${report.page.background}"><tr><td style="padding:${report.page.margin}px">${content}</td></tr></table></td></tr></table></body></html>`;
     } finally { mount.remove(); }
   }
   function base64(value) {

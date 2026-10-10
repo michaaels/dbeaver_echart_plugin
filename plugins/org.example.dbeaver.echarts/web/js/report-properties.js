@@ -94,6 +94,7 @@
         field('Sort direction', item.config.sortDirection, 'select', value => config('sortDirection', value), ['asc', 'desc']),
         field('Show totals / subtotals', item.config.totals, 'checkbox', value => config('totals', value)),
         field('Subtotal group', item.config.groupBy, 'select', value => config('groupBy', value), [['', 'No grouping'], ...names]));
+      body.append(node('p', 'Email keeps the selected page and fits rows to the table height. Increase Rows per page and Height to show more.', 'report-placeholder'));
       if (snapshot) {
         const chosen = W.tableColumns(item, snapshot);
         for (const column of snapshot.columns) {

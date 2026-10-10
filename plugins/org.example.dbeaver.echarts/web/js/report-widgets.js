@@ -131,7 +131,9 @@
     if (!requireData(body, snapshot)) return;
     const columns = tableColumns(widget, snapshot), rows = sortedRows(widget, snapshot);
     if (!columns.length) { body.append(node('p', 'Select table columns in Properties.', 'report-placeholder')); return; }
-    let page = 0;
+    let page = Math.min(Math.max(0, Math.floor(context.tablePages?.[widget.id] || 0)), Math.max(0, Math.ceil(rows.length / widget.config.pageSize) - 1));
+    if (context.tablePages) context.tablePages[widget.id] = page;
+    let rowLimit = widget.config.pageSize;
     const table = node('table', undefined, 'report-table'), head = node('thead'), headRow = node('tr'), tbody = node('tbody');
     columns.forEach(column => {
       const cell = node('th', column.label); cell.scope = 'col'; cell.style.textAlign = column.align;
@@ -153,18 +155,20 @@
         line.append(cell);
       }); tbody.append(line);
     }
+    let grandTotals;
     function totalRow(group, label) {
-      const totals = snapshot.columns.map(column => {
+      const calculate = () => snapshot.columns.map(column => {
         const config = columns.find(item => item.name === column.name);
         return config?.total ? aggregate({ ...snapshot, rows: group }, column.name, 'sum') : null;
       });
+      const totals = group === rows ? (grandTotals ||= calculate()) : calculate();
       const heading = node('tr', undefined, 'report-total'), cell = node('td', label); cell.colSpan = columns.length; heading.append(cell); tbody.append(heading);
       addRow(totals, 'report-total');
     }
     const groupIndex = snapshot.columns.findIndex(column => column.name === widget.config.groupBy);
     function renderRows() {
       tbody.replaceChildren();
-      const shown = context.allRows ? rows : rows.slice(page * widget.config.pageSize, (page + 1) * widget.config.pageSize);
+      const shown = rows.slice(page * widget.config.pageSize, page * widget.config.pageSize + rowLimit);
       if (groupIndex >= 0) {
         const groups = new Map();
         for (const row of shown) { const key = String(row[groupIndex] ?? ''); if (!groups.has(key)) groups.set(key, []); groups.get(key).push(row); }
@@ -173,11 +177,28 @@
       if (widget.config.totals) totalRow(rows, 'Total');
     }
     renderRows();
-    if (!context.allRows && rows.length > widget.config.pageSize) {
+    if (context.staticTable) {
+      const summary = node('p', 'Rows shown in this email', 'report-table-summary'); body.append(summary);
+      // Bound the rows themselves: Outlook cannot reliably clip an overflowing table.
+      // The export body has the same configured pixel height as the designer component.
+      const available = wrap.clientHeight;
+      if (available <= 0) { rowLimit = 0; renderRows(); }
+      if (available > 0 && table.getBoundingClientRect().height > available) {
+        let low = 0, high = rowLimit;
+        while (low < high) {
+          rowLimit = Math.ceil((low + high) / 2); renderRows();
+          if (table.getBoundingClientRect().height <= available) low = rowLimit; else high = rowLimit - 1;
+        }
+        rowLimit = low; renderRows();
+      }
+      const start = page * widget.config.pageSize;
+      summary.textContent = rowLimit ? `Rows ${start + 1}–${Math.min(start + rowLimit, rows.length)} of ${rows.length}` : 'Increase the table height to show data rows.';
+    } else if (rows.length > widget.config.pageSize) {
       const controls = node('div', undefined, 'report-pagination'), previous = node('button', 'Previous'), next = node('button', 'Next'), status = node('span');
       previous.type = next.type = 'button';
       function update() { previous.disabled = page === 0; next.disabled = (page + 1) * widget.config.pageSize >= rows.length; status.textContent = `${page + 1} / ${Math.ceil(rows.length / widget.config.pageSize)} · ${rows.length} rows`; }
-      previous.onclick = () => { page--; renderRows(); update(); }; next.onclick = () => { page++; renderRows(); update(); };
+      const setPage = value => { page = value; if (context.tablePages) context.tablePages[widget.id] = page; renderRows(); update(); };
+      previous.onclick = () => setPage(page - 1); next.onclick = () => setPage(page + 1);
       controls.append(previous, status, next); body.append(controls); update();
     }
     if (snapshot.truncated) body.append(node('p', `Partial result: limited to ${snapshot.effectiveMaxRows} rows.`, 'report-truncated'));

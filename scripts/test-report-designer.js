@@ -238,6 +238,33 @@ async function main() {
     assert.equal(await result.locator('script,canvas').count(), 0); assert.equal(await result.locator('table table tbody tr').count() >= 18, true);
     await result.screenshot({ path: path.join(root, '.dev/screenshots/report-email.png'), fullPage: true });
     await offline.close();
+    // Static mail must preserve the selected page and explicit height, not expand all 90 rows.
+    const tableMail = await page.evaluate(() => {
+      const M = window.DBeaverReportModel, W = window.DBeaverReportWidgets, E = window.DBeaverReportExport;
+      const report = M.create('Bounded email table'), widget = M.widget('table');
+      widget.id = 'bounded-table'; widget.sourceId = 'rows'; widget.layout = { x: 0, y: 0, width: 12, height: 26 };
+      widget.config.pageSize = 10; widget.config.totals = true; report.widgets = [widget];
+      const snapshots = { rows: { columns: [{ name: 'id', kind: 'NUMERIC' }, { name: 'amount', kind: 'NUMERIC' }],
+        rows: Array.from({ length: 90 }, (_, i) => [i + 1, (i + 1) * 100]) } };
+      const mount = W.node('div'); document.body.append(mount);
+      const dispose = W.renderReport(mount, report, snapshots);
+      const designerRows = mount.querySelectorAll('.report-table tbody tr').length; dispose(); mount.remove();
+      const pages = { 'bounded-table': 2 }, email = E.emailHtml(report, snapshots, { tablePages: pages }, {});
+      const extract = html => { const doc = new DOMParser().parseFromString(html, 'text/html'), rows = [...doc.querySelectorAll('table:not([role]) > tbody > tr')];
+        return { rows: rows.length, first: rows[0]?.textContent, last: rows.at(-3)?.textContent, text: doc.body.textContent, html }; };
+      widget.config.pageSize = 45;
+      const limited = extract(E.emailHtml(report, snapshots, {}, {}));
+      widget.layout.height = 50;
+      const expanded = extract(E.emailHtml(report, snapshots, {}, {}));
+      return { designerRows, selected: extract(email), limited, expanded };
+    });
+    assert.equal(tableMail.selected.rows, tableMail.designerRows, 'Email preserves configured page size and totals');
+    assert.match(tableMail.selected.first, /^21\.00/); assert.match(tableMail.selected.last, /^30\.00/);
+    assert.match(tableMail.selected.text, /Rows 21–30 of 90/);
+    assert.match(tableMail.selected.text, /409,500\.00/, 'Grand total still covers all source rows');
+    assert.ok(tableMail.limited.rows < 47, 'Height bounds a manually larger page');
+    assert.equal(tableMail.expanded.rows, 47, 'A manually enlarged height and page can display more rows');
+    assert.ok(!/<button|<script|<canvas/.test(tableMail.selected.html), 'Static email contains no inactive pagination buttons');
     console.log('Report Designer OK: visual authoring, image, shared typed SQL, ECharts preview, KPI/table, totals, keyboard layout, undo/redo, duplicate/delete, save/reopen, offline HTML, static email and CID/attachment EML');
     console.log(screenshot);
   } finally { await browser.close(); }
