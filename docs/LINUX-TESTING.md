@@ -8,6 +8,9 @@ between Windows and Linux; SWT selects the native browser engine for each OS.
 The test suites need Node.js 20+, Python 3, Git, a JDK 21+ compiler, Xvfb and
 Playwright's Chromium/WebKit dependencies. DBeaver uses its bundled Java runtime.
 On Debian, the native SWT browser also needs `libwebkit2gtk-4.1-0`.
+Playwright's WebKit additionally needs `libsystemd.so.0`. On antiX, installing
+`libsystemd0` selects its `libelogind-compat` provider without changing the init
+system.
 
 Install the pinned browser test dependencies from the repository:
 
@@ -41,6 +44,9 @@ Browser suites default to Edge on Windows and Chromium elsewhere. Set
 On slow test machines, `ECHARTS_TEST_TIMEOUT_MS=120000` increases browser action
 timeouts; assertions remain unchanged and the default stays at Playwright's
 normal timeout.
+Offline HTML checks block HTTP(S) requests rather than enabling WebKit's offline
+emulation, which also rejects local-file navigation. The tests still fail if an
+export attempts to fetch an external resource.
 Browser fixtures use `en-US` for deterministic text assertions. Native SWT checks
 should retain the machine's locale and compare values with its actual formatter.
 
